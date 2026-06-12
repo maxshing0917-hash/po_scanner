@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+venv/
+
+# PyInstaller output
+dist/
+build/
+
+# Claude Code
+.claude/
+
+# Runtime state
+config/camera_state.json
+
+# Excel template (binary, distribute separately)
+*.xlsm

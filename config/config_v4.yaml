@@ -1,0 +1,46 @@
+preprocessing:
+  enable_grayscale: true
+  enable_contrast: true
+  contrast_factor: 1.5
+  enable_denoise: true
+  denoise_strength: 3
+  enable_deskew: false
+  enable_sharpen: true
+  sharpen_strength: 1.5
+  roi: null
+  scale_factor: 1.0
+  enable_binarization: false
+  enable_background_removal: false
+ocr:
+  language: en
+  use_gpu: false
+  use_angle_cls: false
+  use_doc_orientation_classify: false
+  use_doc_unwarping: false
+  det_db_thresh: 0.3
+  rec_score_thresh: 0.1
+  det_limit_side_len: 960
+  show_detection_boxes: false
+extraction:
+  po_blacklist:
+  - SANCHEZ
+  - A1RPORT
+  - B1LLING
+camera:
+  default_index: 0
+  width: 1920
+  height: 1080
+csv:
+  folder: C:\Users\User\Desktop
+ui:
+  window_title: PO Scanner
+po_autofill:
+- pc: D21
+  prefix: W
+  rn: '000'
+- pc: D31
+  prefix: S
+  rn: '000'
+excel_generator:
+  template_path: C:\Users\User\Desktop\Trial Template.xlsm
+  output_folder: C:\Users\User\Desktop\Test
