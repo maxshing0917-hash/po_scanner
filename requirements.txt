@@ -1,19 +1,32 @@
 # PO Scanner Desktop (RapidOCR edition) - Python dependencies
 # Install: pip install -r requirements.txt
 
-# Core OCR  (ONNXRuntime-based, no PaddlePaddle required)
+# Core OCR (ONNXRuntime-based, no PaddlePaddle required)
 rapidocr_onnxruntime>=1.4.0
 opencv-python>=4.8.0
+Pillow>=10.0.0
+pyclipper>=1.4.0
+shapely>=2.0.0
 
 # GUI
 PyQt5>=5.15.0
 
+# Windows Runtime (camera enumeration) — Windows 10+ only
+winrt-runtime>=3.2.0
+winrt-Windows.Devices.Enumeration>=3.2.0
+winrt-Windows.Foundation>=3.2.0
+winrt-Windows.Foundation.Collections>=3.2.0
+winrt-Windows.Graphics.Imaging>=3.2.0
+winrt-Windows.Media.Capture>=3.2.0
+winrt-Windows.Media.Capture.Frames>=3.2.0
+winrt-Windows.Media.MediaProperties>=3.2.0
+winrt-Windows.Storage.Streams>=3.2.0
+
 # Excel
-openpyxl==3.1.2
+openpyxl>=3.1.0
 
 # Utilities
 pyyaml>=6.0
-requests>=2.31.0
 
 # Barcode scanning
 zxing-cpp>=2.2.0
