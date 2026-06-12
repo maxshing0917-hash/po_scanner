@@ -13,24 +13,22 @@ cv2_datas,    cv2_bins,    cv2_hidden    = collect_all('cv2')
 PIL_datas,    PIL_bins,    PIL_hidden    = collect_all('PIL')
 clip_datas,   clip_bins,   clip_hidden   = collect_all('pyclipper')
 shp_datas,    shp_bins,    shp_hidden    = collect_all('shapely')
-zxing_datas,  zxing_bins,  zxing_hidden  = collect_all('zxingcpp')
 
 block_cipher = None
 
 a = Analysis(
     ['ocr_core.py'],
     pathex=['.'],
-    binaries=ort_bins + cv2_bins + PIL_bins + zxing_bins,
+    binaries=ort_bins + cv2_bins + PIL_bins,
     datas=[
         ('src', 'src'),
-    ] + rapid_datas + ort_datas + cv2_datas + PIL_datas + clip_datas + shp_datas + zxing_datas,
+    ] + rapid_datas + ort_datas + cv2_datas + PIL_datas + clip_datas + shp_datas,
     hiddenimports=[
         'rapidocr_onnxruntime',
         'onnxruntime', 'onnxruntime.capi',
         'pyclipper', 'shapely', 'shapely.geometry',
-        'zxingcpp',
         'yaml', 'cv2', 'PIL', 'numpy',
-    ] + rapid_hidden + ort_hidden + cv2_hidden + PIL_hidden + clip_hidden + shp_hidden + zxing_hidden,
+    ] + rapid_hidden + ort_hidden + cv2_hidden + PIL_hidden + clip_hidden + shp_hidden,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

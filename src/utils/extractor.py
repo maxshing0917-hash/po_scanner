@@ -1,9 +1,5 @@
 """
 Extractor - PO and Tracking Number extraction
-
-Flow:
-  PO        -> rules first
-  Tracking  -> barcode decode (zxingcpp) -> OCR fallback
 """
 
 import re
@@ -11,12 +7,6 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import numpy as np
-
-try:
-    import zxingcpp
-    _ZXING_AVAILABLE = True
-except ImportError:
-    _ZXING_AVAILABLE = False
 
 
 @dataclass
@@ -176,8 +166,6 @@ _TRACKING_FEDEX_SPACED = re.compile(r'^[\d\s()]{20,80}$')
 # USPS: 420 + 5-digit ZIP + tracking digits, total 28-35 digits
 _TRACKING_USPS = re.compile(r'^420\d{25,32}$')
 
-# AIM barcode identifier prefix (e.g. ]C1, ]c1) -- zxingcpp sometimes includes this
-_AIM_PREFIX = re.compile(r'^\][A-Za-z]\d')
 
 _ALL_CARRIERS = ['amazon', 'ups', 'usps', 'fedex']
 
@@ -193,10 +181,6 @@ def detect_carrier_from_keywords(ocr_lines: list[str]) -> Optional[str]:
             return m.group(1).lower()
     return None
 
-
-def _strip_aim_prefix(text: str) -> str:
-    """Remove AIM barcode identifier (e.g. ]C1), keep actual data."""
-    return _AIM_PREFIX.sub('', text)
 
 
 def _clean_ups(raw: str) -> Optional[str]:
@@ -236,8 +220,8 @@ def _try_carrier(text: str, carrier: str) -> tuple[Optional[str], str]:
 
 
 def _classify_tracking(text: str, forced_carrier: Optional[str] = None) -> tuple[Optional[str], str]:
-    """Auto-detect carrier and extract tracking number from decoded text."""
-    text = _strip_aim_prefix(text.strip())
+    """Auto-detect carrier and extract tracking number from text."""
+    text = text.strip()
     carriers = [forced_carrier] if forced_carrier else _ALL_CARRIERS
     for c in carriers:
         result, source = _try_carrier(text, c)
@@ -245,32 +229,6 @@ def _classify_tracking(text: str, forced_carrier: Optional[str] = None) -> tuple
             return result, source
     return None, ''
 
-
-def extract_tracking_from_barcode(image: np.ndarray, forced_carrier: Optional[str] = None,
-                                   on_raw=None) -> list[tuple[str, str]]:
-    """
-    Decode barcode directly from image using zxingcpp.
-    Returns all valid tracking candidates as a list of (tracking, source) tuples.
-    on_raw(format, text) is called for every raw barcode found.
-    """
-    if not _ZXING_AVAILABLE or image is None:
-        return []
-    try:
-        results = zxingcpp.read_barcodes(image)
-        candidates = []
-        seen: set[str] = set()
-        for r in results:
-            if on_raw:
-                on_raw(r.format, r.text)
-            text = r.text.strip()
-            tracking, source = _classify_tracking(text, forced_carrier)
-            if tracking and tracking not in seen:
-                seen.add(tracking)
-                candidates.append((tracking, source))
-        return candidates
-    except Exception:
-        pass
-    return []
 
 
 def extract_tracking(ocr_lines: list[str], forced_carrier: Optional[str] = None) -> tuple[Optional[str], str]:

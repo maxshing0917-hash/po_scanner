@@ -26,7 +26,6 @@ import logging
 import cv2
 import numpy as np
 import time
-from concurrent.futures import ThreadPoolExecutor
 
 
 def _send(obj: dict):
@@ -90,7 +89,6 @@ def _handle_recognize(engine, req: dict, config: dict):
     from src.preprocessing.image_processor import ImageProcessor
     from src.utils.extractor import (
         extract_po, extract_tracking,
-        extract_tracking_from_barcode,
         detect_carrier_from_keywords,
     )
 
@@ -133,21 +131,10 @@ def _handle_recognize(engine, req: dict, config: dict):
         cv2.imwrite(det_img_path, display)
         _send({'type': 'det_done'})
 
-    _barcode_ms: list = [0.0]
-    def _barcode_task(image):
-        tb = time.perf_counter()
-        result = extract_tracking_from_barcode(image)
-        _barcode_ms[0] = (time.perf_counter() - tb) * 1000
-        return result
-
-    t_parallel0 = time.perf_counter()
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        barcode_future = executor.submit(_barcode_task, img)
-        t_ocr0  = time.perf_counter()
-        results = engine.recognize_split(processed, on_det_done=_on_det)
-        ocr_ms  = (time.perf_counter() - t_ocr0) * 1000
-        trk_candidates = barcode_future.result()
-    parallel_ms = (time.perf_counter() - t_parallel0) * 1000
+    t_ocr0 = time.perf_counter()
+    results = engine.recognize_split(processed, on_det_done=_on_det)
+    ocr_ms  = (time.perf_counter() - t_ocr0) * 1000
+    trk_candidates = []
 
     # PO / tracking extraction
     t_po0 = time.perf_counter()
@@ -174,7 +161,6 @@ def _handle_recognize(engine, req: dict, config: dict):
     _send({'type': 'log', 'msg': (
         f'[TIMING] resize={resize_ms:.1f}ms | preproc={preproc_ms:.1f}ms'
         f' | OCR={ocr_ms:.1f}ms (det={det_ms:.1f}ms rec={rec_ms:.1f}ms overhead={ocr_overhead_ms:.1f}ms)'
-        f' | barcode={_barcode_ms[0]:.1f}ms (parallel={parallel_ms:.1f}ms)'
         f' | po_extract={po_extract_ms:.1f}ms | TOTAL={total_ms:.1f}ms'
     )})
 
