@@ -11,6 +11,7 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
+DisableDirPage=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -32,4 +33,4 @@ Name: "{group}\Uninstall PO Scanner"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\PO Scanner";     Filename: "{app}\po_scanner.exe"; IconFilename: "{app}\po_scanner.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\po_scanner.exe"; Description: "Launch PO Scanner"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\po_scanner.exe"; Description: "Launch PO Scanner"; Flags: nowait postinstall skipifsilent unchecked
