@@ -21,7 +21,7 @@ ui/
   how_to_use.py     How-to-use dialog
 
 config/
-  config_v4.yaml    User-editable settings
+  config.yaml       User-editable settings
   camera_state.json Last used camera index
 
 PO_Import_v2.bas    VBA macro for Excel (import CSV → day sheets)

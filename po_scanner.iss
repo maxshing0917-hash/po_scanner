@@ -2,7 +2,7 @@
 AppName=PO Scanner
 AppVersion=2.0
 AppPublisher=Inteplast
-DefaultDirName={%USERPROFILE}\Downloads\PO Scanner
+DefaultDirName={sd}\PO Scanner
 DefaultGroupName=PO Scanner
 OutputDir=dist
 OutputBaseFilename=PO_Scanner_Setup
@@ -10,7 +10,7 @@ SetupIconFile=PO Scanner.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
 DisableDirPage=no
 
 [Languages]
@@ -18,6 +18,9 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"
+
+[Dirs]
+Name: "{app}\Template"
 
 [Files]
 ; Main app (po_scanner.exe, settings.exe, config/, etc.)

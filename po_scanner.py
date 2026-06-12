@@ -40,7 +40,7 @@ ui/how_to_use.py        HowToUseDialog (extracted, not yet wired back in)
 src/ocr/                OCR engine
 src/preprocessing/      Image preprocessing
 src/utils/extractor.py  PO / tracking number extraction logic
-config/config_v4.yaml   App configuration (CSV folder path, camera index, autofill rules)
+config/config.yaml      App configuration (CSV folder path, camera index, autofill rules)
 PO_Import_v2.bas        VBA macro — imports today's CSV into Excel
 """
 
@@ -3682,7 +3682,7 @@ def main():
     ui_utils._S = min((_geo.width() / _dpr) / 1920.0, (_geo.height() / _dpr) / 1080.0)
     app.setFont(QFont('Segoe UI', max(6, round(10 * ui_utils._S))))
 
-    config_path = BASE_DIR / 'config' / 'config_v4.yaml'
+    config_path = BASE_DIR / 'config' / 'config.yaml'
     with open(config_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
 

@@ -31,7 +31,7 @@ camera:
   width: 1920
   height: 1080
 csv:
-  folder: C:\Users\User\Desktop
+  folder: ''
 ui:
   window_title: PO Scanner
 po_autofill:
@@ -42,5 +42,5 @@ po_autofill:
   prefix: S
   rn: '000'
 excel_generator:
-  template_path: C:\Users\User\Desktop\Trial Template.xlsm
-  output_folder: C:\Users\User\Desktop\Test
+  template_path: C:\PO Scanner\Template\Trial Template.xlsm
+  output_folder: C:\PO Scanner\Template

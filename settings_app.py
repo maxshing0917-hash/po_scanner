@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 PO Scanner — Settings
-Lightweight GUI for editing user-facing options in config_v4.yaml.
+Lightweight GUI for editing user-facing options in config.yaml.
 Technical parameters that affect detection quality are intentionally hidden.
 """
 
@@ -39,7 +39,7 @@ def _base_dir() -> str:
     return os.path.dirname(os.path.abspath(__file__))
 
 
-CONFIG_PATH = os.path.join(_base_dir(), 'config', 'config_v4.yaml')
+CONFIG_PATH = os.path.join(_base_dir(), 'config', 'config.yaml')
 
 
 def load_config() -> dict:
@@ -591,7 +591,7 @@ class SettingsWindow(QMainWindow):
         tpl_row = QHBoxLayout()
         tpl_row.addWidget(QLabel('Template (.xlsm)'))
         self.excel_template = QLineEdit()
-        self.excel_template.setPlaceholderText('e.g. C:/Users/.../Trial Template.xlsm')
+        self.excel_template.setPlaceholderText(r'e.g. C:\PO Scanner\Template\Trial Template.xlsm')
         tpl_row.addWidget(self.excel_template)
         btn_tpl = QPushButton('📂  Browse')
         btn_tpl.setObjectName('browseBtn')
@@ -603,7 +603,7 @@ class SettingsWindow(QMainWindow):
         out_row = QHBoxLayout()
         out_row.addWidget(QLabel('Output folder'))
         self.excel_out_folder = QLineEdit()
-        self.excel_out_folder.setPlaceholderText('Folder where 12 files will be saved')
+        self.excel_out_folder.setPlaceholderText(r'e.g. C:\PO Scanner\Template')
         out_row.addWidget(self.excel_out_folder)
         btn_out = QPushButton('📂  Browse')
         btn_out.setObjectName('browseBtn')
@@ -631,7 +631,7 @@ class SettingsWindow(QMainWindow):
         return g
 
     def _browse_excel_template(self):
-        start = self.excel_template.text() or os.path.expanduser('~')
+        start = self.excel_template.text() or r'C:\PO Scanner\Template'
         path, _ = QFileDialog.getOpenFileName(
             self, 'Select Template .xlsm', start,
             'Excel Macro-Enabled Workbook (*.xlsm)'
@@ -640,7 +640,7 @@ class SettingsWindow(QMainWindow):
             self.excel_template.setText(os.path.normpath(path))
 
     def _browse_excel_output(self):
-        start = self.excel_out_folder.text() or os.path.expanduser('~')
+        start = self.excel_out_folder.text() or r'C:\PO Scanner\Template'
         folder = QFileDialog.getExistingDirectory(self, 'Choose Output Folder', start)
         if folder:
             self.excel_out_folder.setText(os.path.normpath(folder))
@@ -810,7 +810,7 @@ class SettingsWindow(QMainWindow):
         # Excel generator
         excel_gen = cfg.get('excel_generator', {})
         self.excel_template.setText(str(excel_gen.get('template_path', '')))
-        self.excel_out_folder.setText(str(excel_gen.get('output_folder', '')))
+        self.excel_out_folder.setText(str(excel_gen.get('output_folder', r'C:\PO Scanner\Template')))
 
 
     # ── File browse ───────────────────────────────────────────────────────────
