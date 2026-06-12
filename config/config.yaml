@@ -31,7 +31,7 @@ camera:
   width: 1920
   height: 1080
 csv:
-  folder: ''
+  folder: C:\PO Scanner\Template\CSV
 ui:
   window_title: PO Scanner
 po_autofill:

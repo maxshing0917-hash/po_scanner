@@ -21,6 +21,7 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 
 [Dirs]
 Name: "{app}\Template"
+Name: "{app}\Template\CSV"
 
 [Files]
 ; Main app (po_scanner.exe, settings.exe, config/, etc.)
