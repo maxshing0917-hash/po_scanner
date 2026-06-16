@@ -668,9 +668,10 @@ class SettingsWindow(QMainWindow):
             QMessageBox.warning(self, 'Missing Output Folder', 'Please select an output folder.')
             return
 
-        os.makedirs(out_folder, exist_ok=True)
+        sub_folder = os.path.join(out_folder, f'Trial {year} Excel File')
+        os.makedirs(sub_folder, exist_ok=True)
 
-        targets = [os.path.join(out_folder, f'Trial {m} {year}.xlsm') for m in _MONTHS]
+        targets = [os.path.join(sub_folder, f'Trial {m} {year}.xlsm') for m in _MONTHS]
         existing = [t for t in targets if os.path.exists(t)]
         if existing:
             names = '\n'.join(os.path.basename(t) for t in existing)
@@ -695,7 +696,7 @@ class SettingsWindow(QMainWindow):
         else:
             self.statusBar().showMessage(f'✓  12 Excel files generated for {year}', 5000)
             QMessageBox.information(self, 'Done',
-                f'12 files generated in:\n{out_folder}')
+                f'12 files generated in:\n{sub_folder}')
 
     def _detect_cameras(self):
         import asyncio
