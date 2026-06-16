@@ -116,7 +116,7 @@ exe2 = EXE(
     strip=False,
     upx=False,
     console=False,
-    icon='PO Scanner.ico',
+    icon='setting.ico',
 )
 
 # ── Single COLLECT — both exes share _internal ───────────────────────────────
