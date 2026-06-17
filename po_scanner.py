@@ -2391,8 +2391,35 @@ class CarrierSelectPage(GradientWidget):
         lo.addWidget(grid, 0, Qt.AlignCenter)
         lo.addSpacing(_s(48))
 
+        help_btn = QPushButton('▶  How to Use')
+        help_btn.setCursor(Qt.PointingHandCursor)
+        help_btn.setFont(QFont('Segoe UI', _s(18)))
+        help_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                color: {P['subtitle']};
+                border: {_s(2)}px solid {P['border']};
+                border-radius: {_s(10)}px;
+                padding: {_s(10)}px {_s(28)}px;
+            }}
+            QPushButton:hover {{ color: {P['title']}; border-color: {P['subtitle']}; }}
+        """)
+        help_btn.clicked.connect(self._open_guide)
         help_row = QHBoxLayout()
+        help_row.addStretch()
+        help_row.addWidget(help_btn)
+        help_row.addStretch()
+        lo.addLayout(help_row)
         lo.addStretch(1)
+
+
+    def _open_guide(self):
+        if getattr(sys, 'frozen', False):
+            path = Path(sys.executable).parent / 'Guide video' / 'How to Sync and Save.mov'
+        else:
+            path = BASE_DIR / 'How to Sync and Save.mov'
+        if path.exists():
+            os.startfile(str(path))
 
 
 # ── Table drag-to-scroll (damped, no kinetic) ────────────────────────────────

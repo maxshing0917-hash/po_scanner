@@ -22,6 +22,7 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription:
 [Dirs]
 Name: "{app}\Template"
 Name: "{app}\Template\CSV"
+Name: "{app}\Guide video"
 
 [Files]
 ; Main app (po_scanner.exe, settings.exe, config/, etc.)
@@ -29,6 +30,12 @@ Source: "dist\po_scanner\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdi
 
 ; OCR runtime
 Source: "dist\ocr_runtime\*"; DestDir: "{app}\ocr_runtime"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+; Template file
+Source: "Trial Template.xlsm"; DestDir: "{app}\Template"; Flags: ignoreversion
+
+; Guide video
+Source: "How to Sync and Save.mov"; DestDir: "{app}\Guide video"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\PO Scanner";           Filename: "{app}\po_scanner.exe"; IconFilename: "{app}\po_scanner.exe"

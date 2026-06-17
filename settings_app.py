@@ -164,6 +164,7 @@ QPushButton#browseBtn:hover, QPushButton#refreshBtn:hover {{
     background-color: #D4B896;
 }}
 QPushButton#refreshBtn:disabled {{ color: #9B8877; }}
+QPushButton#browseBtn:disabled {{ background-color: #F0E8DC; color: #B8A898; border-color: #DDD0C0; }}
 QStatusBar {{
     border-top: {_s(3)}px solid #D4B896;
     background: #FFF0E0;
@@ -597,6 +598,8 @@ class SettingsWindow(QMainWindow):
         btn_tpl.setObjectName('browseBtn')
         btn_tpl.clicked.connect(self._browse_excel_template)
         tpl_row.addWidget(btn_tpl)
+        self.excel_template.setEnabled(False)
+        btn_tpl.setEnabled(False)
         lay.addLayout(tpl_row)
 
         # Output folder
