@@ -1,6 +1,9 @@
 """
 Preprocessing module
 Handles ROI cropping, image enhancement, and deskew
+
+These steps run before OCR to improve character recognition accuracy
+on camera captures of physical package labels (low contrast, skew, noise).
 """
 
 import cv2

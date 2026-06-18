@@ -1,5 +1,12 @@
 """
 Extractor - PO and Tracking Number extraction
+
+PO numbers are scanned from physical package labels via OCR, which frequently
+misreads certain characters (O↔0, I↔1/L, S↔5, G↔6). The correction rules
+in this module exist to recover valid POs from these misreadings.
+
+Some rules are carrier-specific (e.g. SG vendor POs, PC prefix conventions)
+and were added based on observed OCR errors from real scan data.
 """
 
 import re
@@ -57,7 +64,6 @@ def _normalize_token(token: str) -> str:
     Step 1 — first char: '1'/'L' → 'I' for standard PO lengths (7/15-16 chars);
              '5' → 'S' for SG vendor PO length (9 chars).
     Step 2 — second char: delegate to _fix_po_second_char (O→0, I→1, S+6→SG).
-             Must run after step 1 so the first-char check in that function is correct.
     """
     if len(token) in (7, 15, 16) and token[0] in ('1', 'L'):
         token = 'I' + token[1:]
@@ -80,6 +86,7 @@ def _try_match_po(token: str) -> 'str | None':
             if _PO_FULL.match(candidate):
                 return candidate
         # Case 3: PC missing leading 'D' (token[10] is a digit instead of letter)
+        # 'D' is hardcoded because PC on this carrier always starts with D.
         if token[7:10].isdigit() and len(token) > 10 and token[10].isdigit():
             candidate = token[:10] + 'D' + token[10:]
             if _PO_FULL.match(candidate):

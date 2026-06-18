@@ -3194,7 +3194,7 @@ class ScanTablePage(GradientWidget):
             dlg = _SaveWarnDialog(
                 'You have unsaved records.<br>Would you like to save before switching carrier?',
                 self,
-                confirm_text='Yes, save & switch',
+                confirm_text='Yes, save && switch',  # && renders as literal & in Qt button text
                 confirm_color=P['btn_suc'],
             )
             if dlg.exec_() != QDialog.Accepted:
@@ -3543,7 +3543,7 @@ class MainWindow(QMainWindow):
             dlg = _SaveWarnDialog(
                 'You have unsaved records.<br>Would you like to save before closing?',
                 parent=self,
-                confirm_text='Yes, save && exit',
+                confirm_text='Yes, save && exit',  # && renders as literal & in Qt button text
             )
             pg = self.geometry()
             dlg.adjustSize()
