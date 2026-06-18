@@ -10,11 +10,7 @@
 4. Find the file **`PO_Scanner_Setup.exe`**
 5. Right-click it and select **Copy**
 6. Go to your local Desktop and paste it there
-7. Go back to the network folder
-8. Find the file **`Trial Template.xlsm`**
-9. Right-click it and select **Copy**
-10. Go to your local Desktop and paste it there
-11. Wait for both files to finish copying before continuing
+7. Wait for the file to finish copying before continuing
 
 ---
 
@@ -79,20 +75,7 @@
 
 ---
 
-## Part 7 — Copy the Template File
-
-1. Open **File Explorer**
-2. Navigate to `C:\PO Scanner\Template`
-3. Go back to your Desktop
-4. Find **`Trial Template.xlsm`** (copied in Part 1)
-5. Right-click it and select **Copy**
-6. Go back to `C:\PO Scanner\Template`
-7. Right-click inside the folder and select **Paste**
-8. Wait for the file to finish copying
-
----
-
-## Part 8 — Generate Yearly Excel Files
+## Part 7 — Generate Yearly Excel Files
 
 1. Open **`settings.exe`** again (same steps as Part 3)
 2. Scroll down to the **"Generate Yearly Excel"** section
@@ -112,7 +95,7 @@
 
 ---
 
-## Part 9 — Launch PO Scanner
+## Part 8 — Launch PO Scanner
 
 1. Double-click the **PO Scanner** shortcut on the Desktop
    — OR —

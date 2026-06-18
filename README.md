@@ -61,7 +61,7 @@ After both `dist\po_scanner\` and `dist\ocr_runtime\` are built:
 ## Install (new device)
 
 Run `PO_Scanner_Setup.exe` — no other dependencies required.  
-Default install path: `C:\Users\{user}\Downloads\PO Scanner` (can be changed during install).
+Default install path: `C:\PO Scanner` (can be changed during install).
 
 ---
 
