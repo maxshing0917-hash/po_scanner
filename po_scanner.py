@@ -3332,10 +3332,14 @@ class ScanTablePage(GradientWidget):
         # Read existing value to pre-fill dialog (UserRole=True means placeholder, treat as empty)
         cur_item = self._table.item(row, COL_TRK)
         cur = '' if (cur_item is None or cur_item.data(Qt.UserRole)) else cur_item.text()
-        po_item_ctx = self._table.item(row, COL_PO)
-        po_ctx = ''
-        if po_item_ctx and po_item_ctx.text().strip() and not po_item_ctx.data(Qt.UserRole):
-            po_ctx = f'PO: {po_item_ctx.text().strip()}'
+        def _cell(r, c):
+            it = self._table.item(r, c)
+            return it.text().strip() if it and it.text().strip() and not it.data(Qt.UserRole) else ''
+        po_full = ' '.join(v for v in (
+            _cell(row, COL_PO), _cell(row, COL_NUM),
+            _cell(row, COL_RN), _cell(row, COL_PC),
+        ) if v)
+        po_ctx = f'PO: {po_full}' if po_full else ''
 
         # Open dialog
         dlg = TrackingEditDialog(cur, self, title='Enter Tracking',
@@ -3359,10 +3363,13 @@ class ScanTablePage(GradientWidget):
             self._trk_gap_warned = False
 
     def _handle_po_cell(self, row: int):
-        # Warn if the previous row's PO is still empty
+        # Warn if the previous row's PO is still empty (check all PO sub-columns)
         if row > 0:
-            prev_p = self._table.item(row - 1, COL_PO)
-            prev_filled = prev_p and prev_p.text().strip() and not prev_p.data(Qt.UserRole)
+            prev_filled = any(
+                (lambda it: it and it.text().strip() and not it.data(Qt.UserRole))(
+                    self._table.item(row - 1, c))
+                for c in (COL_PO, COL_NUM, COL_RN, COL_PC)
+            )
             if not prev_filled:
                 warn = _SaveWarnDialog(
                     f'Package #{row} <span style="color:#EF4444;">PO is empty</span>.<br>'
