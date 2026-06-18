@@ -4,6 +4,41 @@ Internal tool for scanning and recording PO numbers via camera OCR.
 
 ---
 
+## App Flow
+
+```mermaid
+flowchart TD
+    classDef app fill:#1a6ea8,stroke:#1a6ea8,color:#fff
+    classDef ui fill:#2e7d32,stroke:#2e7d32,color:#fff
+    classDef ocr fill:#6a1b9a,stroke:#6a1b9a,color:#fff
+    classDef data fill:#b45309,stroke:#b45309,color:#fff
+
+    subgraph Startup
+        A[po_scanner.exe]:::app --> B[CarrierSelectPage]:::app
+    end
+
+    subgraph Scan
+        C[ScanTablePage]:::ui --> D{Input type}
+        D -->|Tracking| E[Barcode / TrackingEditDialog]:::ui
+        D -->|PO| G[POCameraDialog]:::ui
+        G --> H[OCR + extract_po]:::ocr
+        H --> I[_POConfirmDialog]:::ui
+        E --> J[Row recorded]:::data
+        I --> J
+    end
+
+    subgraph Export
+        K[Save to CSV]:::data
+    end
+
+    B --> C
+    J --> C
+    C -->|Save| K
+    C -->|Switch carrier| B
+```
+
+---
+
 ## Project Structure
 
 ```

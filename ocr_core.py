@@ -87,10 +87,7 @@ def main():
 
 def _handle_recognize(engine, req: dict, config: dict):
     from src.preprocessing.image_processor import ImageProcessor
-    from src.utils.extractor import (
-        extract_po, extract_tracking,
-        detect_carrier_from_keywords,
-    )
+    from src.utils.extractor import extract_po
 
     image_path   = req['image_path']
     det_img_path = req.get('det_image_path', image_path + '_det.jpg')
@@ -134,25 +131,12 @@ def _handle_recognize(engine, req: dict, config: dict):
     t_ocr0 = time.perf_counter()
     results = engine.recognize_split(processed, on_det_done=_on_det)
     ocr_ms  = (time.perf_counter() - t_ocr0) * 1000
-    trk_candidates = []
-
-    # PO / tracking extraction
+    # PO extraction
     t_po0 = time.perf_counter()
-    lines            = [text for _, (text, _) in results]
+    lines = [text for _, (text, _) in results]
     po_candidates, po_source = extract_po(lines, blacklist=blacklist)
-    po               = po_candidates[0] if len(po_candidates) == 1 else None
-    ocr_carrier      = detect_carrier_from_keywords(lines)
-
-    if not trk_candidates:
-        ocr_trk, ocr_trk_source = extract_tracking(lines)
-        if not ocr_trk and ocr_carrier:
-            ocr_trk, ocr_trk_source = extract_tracking(lines, forced_carrier=ocr_carrier)
-        if ocr_trk:
-            trk_candidates = [(ocr_trk, ocr_trk_source)]
+    po = po_candidates[0] if len(po_candidates) == 1 else None
     po_extract_ms = (time.perf_counter() - t_po0) * 1000
-
-    tracking   = trk_candidates[0][0] if trk_candidates else ''
-    trk_source = trk_candidates[0][1] if trk_candidates else ''
 
     total_ms = (time.perf_counter() - t0) * 1000
     det_ms = engine.last_det_ms
@@ -165,14 +149,10 @@ def _handle_recognize(engine, req: dict, config: dict):
     )})
 
     _send({
-        'type':                'result',
-        'po':                  po or '',
-        'po_candidates':       po_candidates,
-        'po_source':           po_source,
-        'tracking':            tracking,
-        'tracking_candidates': [list(t) for t in trk_candidates],
-        'tracking_source':     trk_source,
-        'ocr_carrier':         ocr_carrier or '',
+        'type':          'result',
+        'po':            po or '',
+        'po_candidates': po_candidates,
+        'po_source':     po_source,
     })
 
 

@@ -1,5 +1,5 @@
 """
-Extractor - PO and Tracking Number extraction
+Extractor - PO extraction
 
 PO numbers are scanned from physical package labels via OCR, which frequently
 misreads certain characters (O↔0, I↔1/L, S↔5, G↔6). The correction rules
@@ -10,21 +10,7 @@ and were added based on observed OCR errors from real scan data.
 """
 
 import re
-from dataclasses import dataclass, field
 from typing import Optional
-
-import numpy as np
-
-
-@dataclass
-class ExtractionResult:
-    po: Optional[str] = None
-    po_candidates: list = field(default_factory=list)
-    tracking: Optional[str] = None
-    tracking_candidates: list = field(default_factory=list)
-    po_source: str = ""
-    tracking_source: str = ""
-    ocr_carrier: Optional[str] = None
 
 
 # -- PO ---------------------------------------------------------------
@@ -109,7 +95,7 @@ def _po_candidates_from_line(line: str) -> list[str]:
         candidate = _try_match_po(token)
         if candidate and candidate not in result:
             result.append(candidate)
-    if result:  
+    if result:
         return result
 
     # Case 2: find 'PO' keyword followed by a valid PO start char, extract 7 or 15/16-char
@@ -154,94 +140,3 @@ def extract_po(ocr_lines: list[str], blacklist: list[str] | None = None) -> tupl
     else:
         candidates = candidates_full if candidates_full else candidates_7
     return candidates, ('token' if candidates else '')
-
-
-# -- Tracking ---------------------------------------------------------
-
-# Amazon: TBA + 9 or more digits
-_TRACKING_AMAZON = re.compile(r'\bTBA\d{9,}\b', re.IGNORECASE)
-
-# UPS: 1Z prefix, 16 alphanumeric chars after (18 total)
-_TRACKING_UPS_START = re.compile(r'1Z([A-Z0-9 ]{16,30})', re.IGNORECASE)
-
-# FedEx barcode: 96 prefix + 32 digits = 34 digits total
-_TRACKING_FEDEX_BARCODE = re.compile(r'^96\d{32}$')
-
-# FedEx OCR: spaced digit string, e.g. "9622 0422 1 (000 000 0000) 0 00 3805 9009 9850"
-_TRACKING_FEDEX_SPACED = re.compile(r'^[\d\s()]{20,80}$')
-
-# USPS: 420 + 5-digit ZIP + tracking digits, total 28-35 digits
-_TRACKING_USPS = re.compile(r'^420\d{25,32}$')
-
-
-_ALL_CARRIERS = ['amazon', 'ups', 'usps', 'fedex']
-
-# Word-boundary regex — Amazon excluded (detected via TBA prefix instead)
-_CARRIER_KEYWORD_RE = re.compile(r'\b(usps|fedex|ups)\b', re.IGNORECASE)
-
-
-def detect_carrier_from_keywords(ocr_lines: list[str]) -> Optional[str]:
-    """Scan OCR lines for carrier name keywords. Returns carrier string or None."""
-    for line in ocr_lines:
-        m = _CARRIER_KEYWORD_RE.search(line)
-        if m:
-            return m.group(1).lower()
-    return None
-
-
-
-def _clean_ups(raw: str) -> Optional[str]:
-    """Clean a spaced UPS tracking number into the standard 18-char format."""
-    cleaned = '1Z' + re.sub(r'\s+', '', raw).upper()
-    if re.fullmatch(r'1Z[A-Z0-9]{16}', cleaned):
-        return cleaned
-    return None
-
-
-def _try_carrier(text: str, carrier: str) -> tuple[Optional[str], str]:
-    """Try matching a single carrier pattern. Returns (value, source) or (None, '')."""
-    if carrier == 'amazon':
-        if _TRACKING_AMAZON.match(text):
-            return text.upper(), 'amazon'
-
-    elif carrier == 'ups':
-        m = _TRACKING_UPS_START.match(text)
-        if m:
-            result = _clean_ups(m.group(1))
-            if result:
-                return result, 'ups'
-
-    elif carrier == 'usps':
-        digits = re.sub(r'[\s()]', '', text)
-        if _TRACKING_USPS.match(digits):
-            return digits, 'usps'
-
-    elif carrier == 'fedex':
-        digits = re.sub(r'[\s()]', '', text)
-        if _TRACKING_FEDEX_BARCODE.match(digits):
-            return digits, 'fedex'
-        if _TRACKING_FEDEX_SPACED.match(text) and digits.isdigit() and 15 <= len(digits) <= 40:
-            return digits, 'fedex'
-
-    return None, ''
-
-
-def _classify_tracking(text: str, forced_carrier: Optional[str] = None) -> tuple[Optional[str], str]:
-    """Auto-detect carrier and extract tracking number from text."""
-    text = text.strip()
-    carriers = [forced_carrier] if forced_carrier else _ALL_CARRIERS
-    for c in carriers:
-        result, source = _try_carrier(text, c)
-        if result:
-            return result, source
-    return None, ''
-
-
-
-def extract_tracking(ocr_lines: list[str], forced_carrier: Optional[str] = None) -> tuple[Optional[str], str]:
-    """OCR fallback: auto-detect carrier and extract tracking number from text lines."""
-    for line in ocr_lines:
-        tracking, source = _classify_tracking(line, forced_carrier)
-        if tracking:
-            return tracking, source
-    return None, ''
