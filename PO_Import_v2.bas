@@ -101,7 +101,7 @@ End Function
 Private Function FindCsvFolder(wb As Workbook) As String
     ' 1. Try YAML config
     Dim yamlPath As String
-    yamlPath = Environ("USERPROFILE") & "\Desktop\RapidOCR\config\config.yaml"
+    yamlPath = "C:\PO Scanner\config\config.yaml"
     If Dir(yamlPath) <> "" Then
         Dim fromConfig As String
         fromConfig = ParseYamlCsvFolder(yamlPath)
