@@ -66,17 +66,29 @@ def _try_match_po(token: str) -> 'str | None':
 
     # 15-char rescue: valid 7-char prefix, one char missing from RN or PC
     if len(token) == 15 and _PO_7CHAR.match(token[:7]):
-        # Case 4: RN truncated to 2 digits (token[9] is a letter instead of digit)
+        # Case 1: RN truncated to 2 digits (token[9] is a letter instead of digit)
         if token[7:9].isdigit() and not token[9].isdigit():
             candidate = token[:9] + '0' + token[9:]
             if _PO_FULL.match(candidate):
                 return candidate
-        # Case 3: PC missing leading 'D' (token[10] is a digit instead of letter)
+        # Case 2: PC missing leading 'D' (token[10] is a digit instead of letter)
         # 'D' is hardcoded because PC on this carrier always starts with D.
         if token[7:10].isdigit() and len(token) > 10 and token[10].isdigit():
             candidate = token[:10] + 'D' + token[10:]
             if _PO_FULL.match(candidate):
                 return candidate
+
+    # Case 3: full PC block at front (16 chars) — rotate last 10 to front
+    if len(token) == 16 and token[6] in _PO_VALID_STARTS:
+        candidate = token[6:] + token[:6]
+        if _PO_FULL.match(candidate):
+            return candidate
+
+    # Case 4: partial PC (3 chars) at front (13 chars) — strip prefix, return 7-char PO
+    if len(token) == 13 and token[0] not in _PO_VALID_STARTS and token[3] in _PO_VALID_STARTS:
+        candidate = _try_match_po(token[3:10])
+        if candidate:
+            return candidate
 
     return None
 

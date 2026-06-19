@@ -36,7 +36,6 @@ FILE STRUCTURE
 --------------
 po_scanner.py           This file — main app logic and all UI classes
 ui/ui_utils.py          Shared UI utilities: palette (P), _s(), _shadow(), _mk_btn() etc.
-ui/how_to_use.py        HowToUseDialog (extracted, not yet wired back in)
 src/ocr/                OCR engine
 src/preprocessing/      Image preprocessing
 src/utils/extractor.py  PO / tracking number extraction logic
@@ -848,10 +847,6 @@ class _SaveWarnDialog(_DraggableDialog):
         lo.addWidget(content)
 
 
-
-# ── How-to-use dialog ─────────────────────────────────────────────────────────
-
-# HowToUseDialog extracted to how_to_use.py
 
 # ── cv2 → QPixmap helper ──────────────────────────────────────────────────────
 
@@ -2415,9 +2410,9 @@ class CarrierSelectPage(GradientWidget):
 
     def _open_guide(self):
         if getattr(sys, 'frozen', False):
-            path = Path(sys.executable).parent / 'Guide video' / 'How to Sync and Save.mov'
+            path = Path(sys.executable).parent / 'Guide video' / 'How to use PO scanner guide.mov'
         else:
-            path = BASE_DIR / 'How to Sync and Save.mov'
+            path = BASE_DIR / 'How to use PO scanner guide.mov'
         if path.exists():
             os.startfile(str(path))
 

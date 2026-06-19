@@ -23,6 +23,7 @@ a1 = Analysis(
     binaries=cv2_bins + winrt_bins,
     datas=[
         ('config', 'config'),
+        ('How to use PO scanner guide.mov', 'Guide video'),
     ] + cv2_datas + winrt_datas,
     hiddenimports=[
         'openpyxl', 'openpyxl.styles',
