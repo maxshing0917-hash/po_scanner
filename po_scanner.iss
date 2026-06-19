@@ -35,7 +35,7 @@ Source: "dist\ocr_runtime\*"; DestDir: "{app}\ocr_runtime"; Flags: ignoreversion
 Source: "Trial Template.xlsm"; DestDir: "{app}\Template"; Flags: ignoreversion
 
 ; Guide video
-Source: "How to Sync and Save.mov"; DestDir: "{app}\Guide video"; Flags: ignoreversion
+Source: "How to use PO scanner guide.mov"; DestDir: "{app}\Guide video"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\PO Scanner";           Filename: "{app}\po_scanner.exe"; IconFilename: "{app}\po_scanner.exe"

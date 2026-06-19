@@ -2043,13 +2043,16 @@ class ScanTablePage(GradientWidget):
     def _update_placeholders(self):
         # Show greyed-out hint text on the "next expected" empty cell.
         # Tracking placeholder → always at _scan_row (next scan target).
-        # PO placeholder → first row that has tracking but no PO yet (falls back to _scan_row).
+        # PO placeholder → first row that has tracking but none of PO/Number/RN/PC filled (falls back to _scan_row).
         po_ph_row = self._scan_row
         for r in range(self._loaded_count, self._table.rowCount()):
             trk = self._table.item(r, COL_TRK)
-            po  = self._table.item(r, COL_PO)
             has_trk = trk and trk.text().strip() and not trk.data(Qt.UserRole)
-            has_po  = po  and po.text().strip()  and not po.data(Qt.UserRole)
+            has_po  = any(
+                (self._table.item(r, c) and self._table.item(r, c).text().strip()
+                 and not self._table.item(r, c).data(Qt.UserRole))
+                for c in (COL_PO, COL_NUM, COL_RN, COL_PC)
+            )
             if has_trk and not has_po:
                 po_ph_row = r
                 break
