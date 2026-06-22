@@ -690,8 +690,8 @@ class SettingsWindow(QMainWindow):
 
         csv_folder = self.csv_folder.text().strip()
 
-        # Progress: 12 copy steps + 12 embed steps = 24 total
-        total_steps = 24 if csv_folder else 12
+        # Progress: 12 copy steps + (1 embed step if csv_folder) = 13 total
+        total_steps = 13 if csv_folder else 12
         prog = QProgressDialog('Preparing…', None, 0, total_steps, self)
         prog.setWindowTitle('Generating Excel Files')
         prog.setWindowModality(Qt.WindowModal)
@@ -699,13 +699,47 @@ class SettingsWindow(QMainWindow):
         prog.setMinimumDuration(0)
         prog.show()
 
+        # Step 1: copy template → first file, embed J1, then copy first → rest
+        first_dest = targets[0]
         errors = []
-        for i, (m, dest) in enumerate(zip(_MONTHS, targets)):
-            prog.setLabelText(f'Copying {m}…  ({i + 1}/12)')
-            prog.setValue(i)
+
+        prog.setLabelText(f'Copying {_MONTHS[0]}…  (1/12)')
+        prog.setValue(0)
+        QApplication.processEvents()
+        try:
+            shutil.copy2(template, first_dest)
+        except Exception as e:
+            errors.append(f'{_MONTHS[0]}: {e}')
+
+        if csv_folder and os.path.exists(first_dest):
+            prog.setLabelText('Embedding CSV path…')
+            prog.setValue(1)
             QApplication.processEvents()
             try:
-                shutil.copy2(template, dest)
+                import win32com.client
+                xl = win32com.client.Dispatch('Excel.Application')
+                xl.Visible = False
+                xl.DisplayAlerts = False
+                try:
+                    wb = xl.Workbooks.Open(first_dest)
+                    try:
+                        wb.Worksheets('_Data').Cells(1, 10).Value = csv_folder
+                    except Exception:
+                        pass
+                    wb.Save()
+                    wb.Close(False)
+                finally:
+                    xl.Quit()
+            except Exception:
+                pass
+
+        # Step 2: copy first file → remaining 11
+        for i, (m, dest) in enumerate(zip(_MONTHS[1:], targets[1:]), start=1):
+            prog.setLabelText(f'Copying {m}…  ({i + 1}/12)')
+            prog.setValue(i + (1 if csv_folder else 0))
+            QApplication.processEvents()
+            try:
+                shutil.copy2(first_dest, dest)
             except Exception as e:
                 errors.append(f'{m}: {e}')
 
@@ -714,33 +748,6 @@ class SettingsWindow(QMainWindow):
                 hint_path = os.path.join(out_folder, 'csv_path.txt')
                 with open(hint_path, 'w', encoding='utf-8') as f:
                     f.write(csv_folder)
-            except Exception:
-                pass
-
-            # Embed CSV path into _Data!J1 of each generated Excel file
-            try:
-                import win32com.client
-                xl = win32com.client.Dispatch('Excel.Application')
-                xl.Visible = False
-                xl.DisplayAlerts = False
-                try:
-                    for i, dest in enumerate(targets):
-                        prog.setLabelText(f'Embedding CSV path…  ({i + 1}/12)')
-                        prog.setValue(12 + i)
-                        QApplication.processEvents()
-                        if os.path.exists(dest):
-                            try:
-                                wb = xl.Workbooks.Open(dest)
-                                try:
-                                    wb.Worksheets('_Data').Cells(1, 10).Value = csv_folder
-                                except Exception:
-                                    pass
-                                wb.Save()
-                                wb.Close(False)
-                            except Exception:
-                                pass
-                finally:
-                    xl.Quit()
             except Exception:
                 pass
 
@@ -970,6 +977,17 @@ def main():
 
     global _S
     _S = QApplication.primaryScreen().availableGeometry().height() / 1080
+
+    # Password gate
+    try:
+        expected_pwd = load_config().get('settings_password', '')
+    except Exception:
+        expected_pwd = ''
+    if expected_pwd:
+        from ui.dialogs import _PasswordDialog
+        dlg = _PasswordDialog(expected_pwd)
+        if dlg.exec_() != QDialog.Accepted:
+            sys.exit(0)
 
     win = SettingsWindow()
     screen = app.primaryScreen().availableGeometry()
