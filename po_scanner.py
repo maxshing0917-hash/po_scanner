@@ -90,7 +90,7 @@ from PyQt5.QtWidgets import (
     QStackedWidget, QAbstractItemView, QStyledItemDelegate,
     QStyle, QStyleOptionViewItem,
 )
-from PyQt5.QtCore import Qt, QTimer, QRect, QRectF, QThread, pyqtSignal, QEvent, QPoint, QPointF, QObject
+from PyQt5.QtCore import Qt, QTimer, QRect, QRectF, QThread, pyqtSignal, QEvent, QPoint, QPointF, QObject, QFileSystemWatcher
 from PyQt5.QtNetwork import QLocalServer, QLocalSocket
 from PyQt5.QtGui import (
     QFont, QColor, QPainter, QPen, QLinearGradient, QPainterPath, QPixmap,
@@ -103,6 +103,7 @@ import ui.ui_utils as ui_utils
 from ui.dialogs import (
     _DraggableDialog, AlertDialog, _SaveWarnDialog, TrackingEditDialog,
     _POEditDialog, _EditAllDialog, _POConfirmDialog, _PCPickerDialog,
+    _PasswordDialog,
 )
 
 # ── Carrier definitions (single source of truth) ──────────────────────────────
@@ -2525,6 +2526,7 @@ class MainWindow(QMainWindow):
     """
     def __init__(self, config: dict):
         super().__init__()
+        self._config        = config
         self.setWindowTitle(config.get('ui', {}).get('window_title', 'PO Scanner'))
         self._stack         = QStackedWidget()
         self._carrier_page  = CarrierSelectPage()
@@ -2567,13 +2569,65 @@ class MainWindow(QMainWindow):
         self._min_btn.clicked.connect(self.showMinimized)
         self._min_btn.raise_()
 
+        # Live-reload config when Settings app saves changes
+        _cfg_file = str(BASE_DIR / 'config' / 'config.yaml')
+        self._cfg_watcher = QFileSystemWatcher([_cfg_file], self)
+        self._cfg_watcher.fileChanged.connect(self._on_config_changed)
+
+        # Floating gear button (top-left) — opens Settings after password check
+        self._gear_btn = QPushButton('⚙')
+        self._gear_btn.setParent(self)
+        self._gear_btn.setFixedSize(_s(52), _s(52))
+        self._gear_btn.setFont(QFont('Segoe UI', _s(20)))
+        self._gear_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: rgba(80,100,140,200); color: white;
+                border-radius: {_s(10)}px; border: none;
+            }}
+            QPushButton:hover {{ background: rgba(100,125,175,255); }}
+        """)
+        self._gear_btn.clicked.connect(self._open_settings)
+        self._gear_btn.raise_()
+
     def resizeEvent(self, e):
         super().resizeEvent(e)
         m = _s(12)
         self._close_btn.move(self.width() - self._close_btn.width() - m, m)
         self._min_btn.move(self.width() - self._close_btn.width() - self._min_btn.width() - m * 2, m)
+        self._gear_btn.move(m, m)
         self._close_btn.raise_()
         self._min_btn.raise_()
+        self._gear_btn.raise_()
+
+    def _on_config_changed(self, path: str):
+        QTimer.singleShot(150, lambda: self._reload_config(path))
+
+    def _reload_config(self, path: str):
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                new_cfg = yaml.safe_load(f) or {}
+            if new_cfg:
+                self._config.clear()
+                self._config.update(new_cfg)
+        except Exception:
+            pass
+        if path not in self._cfg_watcher.files():
+            self._cfg_watcher.addPath(path)
+
+    def _open_settings(self):
+        password = self._config.get('settings_password', '')
+        dlg = _PasswordDialog(password, parent=self)
+        if dlg.exec_() != QDialog.Accepted:
+            return
+        try:
+            if getattr(sys, 'frozen', False):
+                settings_exe = Path(sys.executable).parent / 'settings.exe'
+                subprocess.Popen([str(settings_exe)])
+            else:
+                settings_py = Path(__file__).parent / 'settings_app.py'
+                subprocess.Popen([sys.executable, str(settings_py)])
+        except Exception as e:
+            AlertDialog(f'Could not open Settings:\n{e}', self).exec_()
 
     def bring_to_front(self):
         self.showFullScreen()
@@ -2611,9 +2665,11 @@ class MainWindow(QMainWindow):
         self._scan_page.set_carrier(carrier)
         self._scan_page.reset(carrier)
         self._stack.setCurrentWidget(self._scan_page)
+        self._gear_btn.hide()
 
     def _go_carrier(self):
         self._stack.setCurrentWidget(self._carrier_page)
+        self._gear_btn.show()
 
 
 # ── CSV helpers ───────────────────────────────────────────────────────────────

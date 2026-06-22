@@ -64,6 +64,7 @@ a2 = Analysis(
     hiddenimports=[
         'PyQt5', 'PyQt5.QtWidgets', 'PyQt5.QtCore', 'PyQt5.QtGui',
         'yaml', 'requests', 'charset_normalizer', 'idna', 'urllib3',
+        'win32com', 'win32com.client', 'win32com.server', 'pywintypes', 'win32api',
     ],
     hookspath=[],
     hooksconfig={},

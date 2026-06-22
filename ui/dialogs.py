@@ -971,3 +971,101 @@ class _PCPickerDialog(_DraggableDialog):
             y = pg.y() + (pg.height() - self.height()) // 2
             self.move(x, y)
         return super().exec_()
+
+
+# ── Settings password dialog ──────────────────────────────────────────────────
+
+class _PasswordDialog(_DraggableDialog):
+    """Password prompt shown before opening Settings from the main window."""
+
+    def __init__(self, expected: str, parent=None):
+        super().__init__(parent)
+        self._expected = expected
+        self.setModal(True)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setMinimumWidth(_s(480))
+
+        p = _s(18)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(p, p, p, p + _s(8))
+
+        card = QWidget()
+        card.setStyleSheet(f'background: {P["bg_start"]}; border-radius: {_s(20)}px;')
+        _shadow(card, blur=40, dy=10)
+        outer.addWidget(card)
+
+        lo = QVBoxLayout(card)
+        lo.setContentsMargins(0, 0, 0, 0)
+        lo.setSpacing(0)
+
+        header = QWidget()
+        header.setFixedHeight(_s(62))
+        header.setStyleSheet(
+            f'background: {P["title"]}; border-radius: {_s(20)}px {_s(20)}px 0 0;')
+        h_lo = QHBoxLayout(header)
+        h_lo.setContentsMargins(_s(26), 0, _s(26), 0)
+        title_lbl = QLabel('Settings Access')
+        title_lbl.setFont(QFont('Segoe UI', _s(20), QFont.Bold))
+        title_lbl.setStyleSheet('color: white; background: transparent;')
+        h_lo.addWidget(title_lbl)
+        lo.addWidget(header)
+
+        content = QWidget()
+        content.setStyleSheet('background: transparent;')
+        c_lo = QVBoxLayout(content)
+        c_lo.setContentsMargins(_s(36), _s(28), _s(36), _s(28))
+        c_lo.setSpacing(_s(16))
+
+        self._input = QLineEdit()
+        self._input.setEchoMode(QLineEdit.Password)
+        self._input.setPlaceholderText('Enter password')
+        self._input.setFont(QFont('Segoe UI', _s(18)))
+        self._input.setFixedHeight(_s(54))
+        self._input.setStyleSheet(
+            f'QLineEdit {{ background: white; border: {_s(2)}px solid {P["border"]};'
+            f' border-radius: {_s(10)}px; padding: 0 {_s(14)}px; color: {P["text"]}; }}'
+            f'QLineEdit:focus {{ border-color: {P["btn_pri"]}; }}'
+        )
+        self._input.returnPressed.connect(self._on_confirm)
+        c_lo.addWidget(self._input)
+
+        self._err_lbl = QLabel('')
+        self._err_lbl.setFont(QFont('Segoe UI', _s(15)))
+        self._err_lbl.setStyleSheet('color: #EF4444; background: transparent;')
+        self._err_lbl.setAlignment(Qt.AlignCenter)
+        self._err_lbl.setFixedHeight(_s(24))
+        c_lo.addWidget(self._err_lbl)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(_s(16))
+        cancel_btn = _mk_btn('Cancel',  P['btn_sec'], h=64, fs=18, min_w=160)
+        ok_btn     = _mk_btn('Confirm', P['btn_pri'], h=64, fs=18, min_w=160)
+        cancel_btn.setAutoDefault(False)
+        ok_btn.setAutoDefault(False)
+        cancel_btn.clicked.connect(self.reject)
+        ok_btn.clicked.connect(self._on_confirm)
+        btn_row.addWidget(cancel_btn)
+        btn_row.addStretch()
+        btn_row.addWidget(ok_btn)
+        c_lo.addLayout(btn_row)
+        lo.addWidget(content)
+
+        QTimer.singleShot(0, self._input.setFocus)
+
+    def _on_confirm(self):
+        if self._input.text() == self._expected:
+            self.accept()
+        else:
+            self._err_lbl.setText('Incorrect password.')
+            self._input.clear()
+            self._input.setFocus()
+
+    def exec_(self):
+        if self.parent():
+            pg = self.parent().window().geometry()
+            self.adjustSize()
+            x = pg.x() + (pg.width()  - self.width())  // 2
+            y = pg.y() + (pg.height() - self.height()) // 2
+            self.move(x, y)
+        return super().exec_()

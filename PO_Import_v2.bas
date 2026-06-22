@@ -25,6 +25,7 @@ Option Explicit
 Private Const DATA_SHEET     As String = "_Data"
 Private Const DATA_START_ROW As Long   = 3
 Private Const MAX_PER_SYNC   As Long   = 12
+Private Const CSV_PATH_HINT  As String = "\\172.17.5.87\WHSE Receiving\Trial PO Scan\Template\csv_path.txt"
 
 Private Function CarrierCol(carrier As String) As Long
     Select Case LCase(Trim(carrier))
@@ -73,51 +74,55 @@ Private Function EnMonthName(m As Integer) As String
     EnMonthName = n(m)
 End Function
 
-Private Function ParseYamlCsvFolder(yamlPath As String) As String
-    Dim fn As Integer: fn = FreeFile
-    Dim line As String, trimmed As String, inCsv As Boolean
-    On Error GoTo Done
-    Open yamlPath For Input As #fn
-    Do While Not EOF(fn)
-        Line Input #fn, line
-        trimmed = Trim(line)
-        If trimmed = "csv:" Then
-            inCsv = True
-        ElseIf inCsv Then
-            If Left(trimmed, 7) = "folder:" Then
-                ParseYamlCsvFolder = Trim(Mid(trimmed, 8))
-                GoTo Done
-            ElseIf Len(trimmed) > 0 And Left(trimmed, 1) <> "#" _
-                   And Left(line, 1) <> " " And Left(line, 1) <> Chr(9) Then
-                inCsv = False
-            End If
-        End If
-    Loop
-Done:
-    On Error Resume Next
-    Close #fn
+' Parse month number from workbook name: "Trial MAR 2026.xlsm" → 3
+' Returns 0 if not recognised
+Private Function MonthFromWbName(wbName As String) As Integer
+    Dim parts() As String: parts = Split(wbName, " ")
+    If UBound(parts) < 2 Then MonthFromWbName = 0: Exit Function
+    Select Case UCase(parts(1))
+        Case "JAN": MonthFromWbName = 1
+        Case "FEB": MonthFromWbName = 2
+        Case "MAR": MonthFromWbName = 3
+        Case "APR": MonthFromWbName = 4
+        Case "MAY": MonthFromWbName = 5
+        Case "JUN": MonthFromWbName = 6
+        Case "JUL": MonthFromWbName = 7
+        Case "AUG": MonthFromWbName = 8
+        Case "SEP": MonthFromWbName = 9
+        Case "OCT": MonthFromWbName = 10
+        Case "NOV": MonthFromWbName = 11
+        Case "DEC": MonthFromWbName = 12
+        Case Else:  MonthFromWbName = 0
+    End Select
 End Function
 
 Private Function FindCsvFolder(wb As Workbook) As String
-    ' 1. Try YAML config
-    Dim yamlPath As String
-    yamlPath = "C:\PO Scanner\config\config.yaml"
-    If Dir(yamlPath) <> "" Then
-        Dim fromConfig As String
-        fromConfig = ParseYamlCsvFolder(yamlPath)
-        If fromConfig <> "" And Dir(fromConfig, vbDirectory) <> "" Then
-            FindCsvFolder = fromConfig
-            Exit Function
-        End If
-    End If
-    ' 2. Try saved path in _Data sheet (J1)
     Dim ds As Worksheet: Set ds = GetDataSheet(wb)
+
+    ' 1. Path embedded in _Data!J1 at generate time
     Dim savedPath As String: savedPath = CStr(ds.Cells(1, 10).Value)
     If savedPath <> "" And Dir(savedPath, vbDirectory) <> "" Then
         FindCsvFolder = savedPath
         Exit Function
     End If
-    ' 3. Show dialog and persist choice
+
+    ' 2. csv_path.txt at fixed network location (fallback for older files)
+    If Dir(CSV_PATH_HINT) <> "" Then
+        Dim fn As Integer: fn = FreeFile
+        Dim hintPath As String
+        On Error Resume Next
+        Open CSV_PATH_HINT For Input As #fn
+        Line Input #fn, hintPath
+        Close #fn
+        On Error GoTo 0
+        hintPath = Trim(hintPath)
+        If hintPath <> "" And Dir(hintPath, vbDirectory) <> "" Then
+            FindCsvFolder = hintPath
+            Exit Function
+        End If
+    End If
+
+    ' 3. Folder picker — last resort
     With Application.FileDialog(msoFileDialogFolderPicker)
         .Title = "Select the CSV folder (where PO_*.csv files are saved)"
         .InitialFileName = Environ("USERPROFILE") & "\Desktop\"
@@ -417,10 +422,22 @@ Public Sub ImportTodayFromCSV()
     Dim csvFolder As String: csvFolder = FindCsvFolder(wb)
     If csvFolder = "" Then Exit Sub
 
+    ' Derive month/year from workbook filename: "Trial MAR 2026.xlsm"
+    Dim wbYear As Integer, wbMonth As Integer
+    wbMonth = MonthFromWbName(wb.Name)
+    Dim parts() As String: parts = Split(wb.Name, " ")
+    If UBound(parts) >= 2 Then
+        Dim yearStr As String: yearStr = Left(parts(2), 4)
+        If IsNumeric(yearStr) Then wbYear = CInt(yearStr)
+    End If
+    If wbMonth = 0 Or wbYear = 0 Then
+        wbMonth = Month(Date): wbYear = Year(Date)
+    End If
+
     Dim today    As Date:   today    = Date
     Dim todayStr As String: todayStr = Format(today, "yyyy-mm-dd")
     Dim csvPath  As String
-    csvPath = csvFolder & "\" & "PO_" & EnMonthName(Month(today)) & "_" & Year(today) & ".csv"
+    csvPath = csvFolder & "\" & "PO_" & EnMonthName(wbMonth) & "_" & wbYear & ".csv"
 
     If Dir(csvPath) = "" Then
         MsgBox "CSV file not found:" & vbLf & csvPath, vbExclamation, "PO Import"
