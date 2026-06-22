@@ -99,14 +99,7 @@ End Function
 Private Function FindCsvFolder(wb As Workbook) As String
     Dim ds As Worksheet: Set ds = GetDataSheet(wb)
 
-    ' 1. Path embedded in _Data!J1 at generate time
-    Dim savedPath As String: savedPath = CStr(ds.Cells(1, 10).Value)
-    If savedPath <> "" And Dir(savedPath, vbDirectory) <> "" Then
-        FindCsvFolder = savedPath
-        Exit Function
-    End If
-
-    ' 2. csv_path.txt at fixed network location (fallback for older files)
+    ' 1. csv_path.txt at fixed network location (always reflects latest Settings save)
     If Dir(CSV_PATH_HINT) <> "" Then
         Dim fn As Integer: fn = FreeFile
         Dim hintPath As String
@@ -120,6 +113,13 @@ Private Function FindCsvFolder(wb As Workbook) As String
             FindCsvFolder = hintPath
             Exit Function
         End If
+    End If
+
+    ' 2. Path embedded in _Data!J1 at generate time (fallback if csv_path.txt unreachable)
+    Dim savedPath As String: savedPath = CStr(ds.Cells(1, 10).Value)
+    If savedPath <> "" And Dir(savedPath, vbDirectory) <> "" Then
+        FindCsvFolder = savedPath
+        Exit Function
     End If
 
     ' 3. Folder picker — last resort

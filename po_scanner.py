@@ -103,7 +103,6 @@ import ui.ui_utils as ui_utils
 from ui.dialogs import (
     _DraggableDialog, AlertDialog, _SaveWarnDialog, TrackingEditDialog,
     _POEditDialog, _EditAllDialog, _POConfirmDialog, _PCPickerDialog,
-    _PasswordDialog,
 )
 
 # ── Carrier definitions (single source of truth) ──────────────────────────────
@@ -2609,16 +2608,13 @@ class MainWindow(QMainWindow):
             if new_cfg:
                 self._config.clear()
                 self._config.update(new_cfg)
+                self._scan_page._cam_index = new_cfg.get('camera', {}).get('default_index', 0)
         except Exception:
             pass
         if path not in self._cfg_watcher.files():
             self._cfg_watcher.addPath(path)
 
     def _open_settings(self):
-        password = self._config.get('settings_password', '')
-        dlg = _PasswordDialog(password, parent=self)
-        if dlg.exec_() != QDialog.Accepted:
-            return
         try:
             if getattr(sys, 'frozen', False):
                 settings_exe = Path(sys.executable).parent / 'settings.exe'
