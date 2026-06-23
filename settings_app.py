@@ -724,14 +724,14 @@ class SettingsWindow(QMainWindow):
                     wb = xl.Workbooks.Open(first_dest)
                     try:
                         wb.Worksheets('_Data').Cells(1, 10).Value = csv_folder
-                    except Exception:
-                        pass
+                    except Exception as e_inner:
+                        QMessageBox.warning(self, 'Embed warning', f'Could not write _Data!J1:\n{e_inner}')
                     wb.Save()
                     wb.Close(False)
                 finally:
                     xl.Quit()
-            except Exception:
-                pass
+            except Exception as e_outer:
+                QMessageBox.warning(self, 'Embed failed', f'win32com error:\n{e_outer}')
 
         # Step 2: copy first file → remaining 11
         for i, (m, dest) in enumerate(zip(_MONTHS[1:], targets[1:]), start=1):
@@ -742,14 +742,6 @@ class SettingsWindow(QMainWindow):
                 shutil.copy2(first_dest, dest)
             except Exception as e:
                 errors.append(f'{m}: {e}')
-
-        if csv_folder:
-            try:
-                hint_path = os.path.join(out_folder, 'csv_path.txt')
-                with open(hint_path, 'w', encoding='utf-8') as f:
-                    f.write(csv_folder)
-            except Exception:
-                pass
 
         prog.setValue(total_steps)
         prog.close()
@@ -936,7 +928,6 @@ class SettingsWindow(QMainWindow):
         try:
             save_config(cfg)
             self._dirty = False
-            self._write_csv_folder_hint()
             self.statusBar().showMessage('✓  Settings saved', 4000)
             QMessageBox.information(
                 self, 'Saved',
@@ -944,16 +935,6 @@ class SettingsWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, 'Save Failed', f'Could not write config:\n{e}')
 
-    def _write_csv_folder_hint(self):
-        csv_folder = self.csv_folder.text().strip()
-        out_folder = self.excel_out_folder.text().strip()
-        if not csv_folder or not out_folder:
-            return
-        try:
-            with open(os.path.join(out_folder, 'csv_path.txt'), 'w', encoding='utf-8') as f:
-                f.write(csv_folder)
-        except Exception:
-            pass
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

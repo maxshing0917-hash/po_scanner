@@ -1,4 +1,4 @@
-Attribute VB_Name = "PO_Import_v2"
+﻿Attribute VB_Name = "PO_Import_v2"
 Option Explicit
 
 '===============================================================================
@@ -8,7 +8,7 @@ Option Explicit
 '   _Data sheet (hidden): all synced records
 '       A=Date  B=Carrier  C=Package#  D=Tracking  E=PO  F=Number  G=RN  H=PC
 '
-'   Day sheets 1-30 (display layer) — v1 layout:
+'   Day sheets 1-30 (display layer) - v1 layout:
 '       A=Package#  B=Date
 '       C=USPS Tracking      D=PO  E=Number  F=RN  G=PC
 '       H=FedEx Tracking     I=PO  J=Number  K=RN  L=PC
@@ -18,14 +18,13 @@ Option Explicit
 '       Row 1: headers  Row 2: Sync button  Rows 3-100: data (pkg# = row-2)
 '
 ' Sync flow:
-'   Scan CSV → find first new record → use its carrier as target
-'   Import up to 12 records of that carrier → refresh display
+'   Scan CSV -> find first new record -> use its carrier as target
+'   Import up to 12 records of that carrier -> refresh display
 '===============================================================================
 
 Private Const DATA_SHEET     As String = "_Data"
 Private Const DATA_START_ROW As Long   = 3
 Private Const MAX_PER_SYNC   As Long   = 12
-Private Const CSV_PATH_HINT  As String = "\\172.17.5.87\WHSE Receiving\Trial PO Scan\Template\csv_path.txt"
 
 Private Function CarrierCol(carrier As String) As Long
     Select Case LCase(Trim(carrier))
@@ -49,7 +48,7 @@ Private Function CarrierLabel(key As String) As String
     End Select
 End Function
 
-' ── Date normalisation ────────────────────────────────────────────────────────
+' -- Date normalisation --------------------------------------------------------
 
 Private Function NormDate(s As String) As String
     ' Accepts "2026-05-27", "5/27/2026", "2026/5/27", etc.
@@ -63,7 +62,7 @@ Private Function NormDate(s As String) As String
     On Error GoTo 0
 End Function
 
-' ── Helpers (CSV / YAML) ──────────────────────────────────────────────────────
+' -- Helpers (CSV / YAML) ------------------------------------------------------
 
 Private Function EnMonthName(m As Integer) As String
     Dim n(1 To 12) As String
@@ -74,7 +73,7 @@ Private Function EnMonthName(m As Integer) As String
     EnMonthName = n(m)
 End Function
 
-' Parse month number from workbook name: "Trial MAR 2026.xlsm" → 3
+' Parse month number from workbook name: "Trial MAR 2026.xlsm" -> 3
 ' Returns 0 if not recognised
 Private Function MonthFromWbName(wbName As String) As Integer
     Dim parts() As String: parts = Split(wbName, " ")
@@ -99,30 +98,14 @@ End Function
 Private Function FindCsvFolder(wb As Workbook) As String
     Dim ds As Worksheet: Set ds = GetDataSheet(wb)
 
-    ' 1. csv_path.txt at fixed network location (always reflects latest Settings save)
-    If Dir(CSV_PATH_HINT) <> "" Then
-        Dim fn As Integer: fn = FreeFile
-        Dim hintPath As String
-        On Error Resume Next
-        Open CSV_PATH_HINT For Input As #fn
-        Line Input #fn, hintPath
-        Close #fn
-        On Error GoTo 0
-        hintPath = Trim(hintPath)
-        If hintPath <> "" And Dir(hintPath, vbDirectory) <> "" Then
-            FindCsvFolder = hintPath
-            Exit Function
-        End If
-    End If
-
-    ' 2. Path embedded in _Data!J1 at generate time (fallback if csv_path.txt unreachable)
+    ' 1. Path embedded in _Data!J1 at generate time
     Dim savedPath As String: savedPath = CStr(ds.Cells(1, 10).Value)
     If savedPath <> "" And Dir(savedPath, vbDirectory) <> "" Then
         FindCsvFolder = savedPath
         Exit Function
     End If
 
-    ' 3. Folder picker — last resort
+    ' 2. Folder picker - last resort
     With Application.FileDialog(msoFileDialogFolderPicker)
         .Title = "Select the CSV folder (where PO_*.csv files are saved)"
         .InitialFileName = Environ("USERPROFILE") & "\Desktop\"
@@ -133,7 +116,7 @@ Private Function FindCsvFolder(wb As Workbook) As String
     End With
 End Function
 
-' ── _Data sheet ───────────────────────────────────────────────────────────────
+' -- _Data sheet ---------------------------------------------------------------
 
 Private Function GetDataSheet(wb As Workbook) As Worksheet
     Dim ws As Worksheet
@@ -153,7 +136,7 @@ Private Function GetDataSheet(wb As Workbook) As Worksheet
     Set GetDataSheet = ws
 End Function
 
-' ── Refresh display from _Data (all carriers, today) ─────────────────────────
+' -- Refresh display from _Data (all carriers, today) -------------------------
 
 Private Sub RefreshView(ws As Worksheet)
     Dim ds As Worksheet: Set ds = GetDataSheet(ws.Parent)
@@ -201,7 +184,7 @@ NextRow:
     Next r
 End Sub
 
-' ── Format a single day sheet ─────────────────────────────────────────────────
+' -- Format a single day sheet -------------------------------------------------
 
 Private Sub FormatSheet(ws As Worksheet)
     Application.ScreenUpdating = False
@@ -336,7 +319,7 @@ Private Sub FormatSheet(ws As Worksheet)
     Application.ScreenUpdating = True
 End Sub
 
-' ── Public: create all 30 sheets + _Data sheet ───────────────────────────────
+' -- Public: create all 30 sheets + _Data sheet -------------------------------
 
 Public Sub SetupTemplate_v2()
     Dim wb As Workbook: Set wb = ActiveWorkbook
@@ -389,7 +372,7 @@ Public Sub SetupTemplate_v2()
            "Save as .xlsm to keep macros.", vbInformation, "Setup Complete"
 End Sub
 
-' ── Public: import CSV → _Data → refresh display ─────────────────────────────
+' -- Public: import CSV -> _Data -> refresh display -----------------------------
 
 Public Sub ImportTodayFromCSV()
     Dim ws As Worksheet: Set ws = ActiveSheet
