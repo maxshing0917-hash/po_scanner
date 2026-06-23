@@ -2717,8 +2717,11 @@ def _norm_date(s: str) -> str:
 
 
 def _save_csv(config: dict, carrier: str, new_rows: list) -> 'tuple[bool, str]':
-    """Append new rows to monthly CSV, skipping tracking numbers already saved today."""
+    """Append new rows to monthly CSV, skipping tracking numbers already saved today.
+    Runs file I/O in a background thread with a 10s timeout to avoid freezing if
+    the network drive disconnects mid-save."""
     import csv
+    import concurrent.futures
     from datetime import date
 
     if not config.get('csv', {}).get('folder', ''):
@@ -2727,12 +2730,12 @@ def _save_csv(config: dict, carrier: str, new_rows: list) -> 'tuple[bool, str]':
     today_str = date.today().isoformat()
     p = _csv_path(config)
 
-    existing_trackings: set = set()
-    pkg_count = 0
-    file_has_content = p.exists() and p.stat().st_size > 0
+    def _do_save():
+        existing_trackings: set = set()
+        pkg_count = 0
+        file_has_content = p.exists() and p.stat().st_size > 0
 
-    if file_has_content:
-        try:
+        if file_has_content:
             with open(p, 'r', newline='', encoding='utf-8') as f:
                 for row in csv.DictReader(f):
                     if _norm_date(row.get('Date', '')) == today_str and row.get('Carrier', '').lower() == carrier.lower():
@@ -2740,14 +2743,11 @@ def _save_csv(config: dict, carrier: str, new_rows: list) -> 'tuple[bool, str]':
                         t = row.get('Tracking', '').strip().lstrip("'")
                         if t:
                             existing_trackings.add(t)
-        except Exception as e:
-            return False, str(e)
 
-    to_append = [r for r in new_rows if not r[0] or r[0] not in existing_trackings]
-    if not to_append:
-        return True, ''
+        to_append = [r for r in new_rows if not r[0] or r[0] not in existing_trackings]
+        if not to_append:
+            return True, ''
 
-    try:
         mode = 'a' if file_has_content else 'w'
         with open(p, mode, newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=_CSV_FIELDNAMES)
@@ -2765,8 +2765,17 @@ def _save_csv(config: dict, carrier: str, new_rows: list) -> 'tuple[bool, str]':
                     'PC':       pc,
                 })
         return True, ''
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(_do_save)
+    try:
+        return future.result(timeout=10.0)
+    except concurrent.futures.TimeoutError:
+        return False, 'Network drive is not responding.\nPlease check your connection and try again.'
     except Exception as e:
         return False, str(e)
+    finally:
+        executor.shutdown(wait=False)
 
 
 def _load_csv_carrier(config: dict, carrier: str) -> 'list | None':
