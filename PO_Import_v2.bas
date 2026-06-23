@@ -1,4 +1,4 @@
-﻿Attribute VB_Name = "PO_Import_v2"
+Attribute VB_Name = "PO_Import_v2"
 Option Explicit
 
 '===============================================================================
