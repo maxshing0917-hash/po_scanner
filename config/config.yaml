@@ -31,7 +31,7 @@ camera:
   width: 1920
   height: 1080
 csv:
-  folder: \\172.17.5.87\WHSE Receiving\Trial PO Scan\CSV
+  folder: C:\PO Scanner\Template\CSV
 ui:
   window_title: PO Scanner
 po_autofill:
@@ -43,5 +43,5 @@ po_autofill:
   rn: '000'
 settings_password: 77979!!
 excel_generator:
-  template_path: \\172.17.5.87\WHSE Receiving\Trial PO Scan\Template\Trial Template.xlsm
-  output_folder: \\172.17.5.87\WHSE Receiving\Trial PO Scan\Template
+  template_path: C:\PO Scanner\Template\Trial Template.xlsm
+  output_folder: C:\PO Scanner\Template

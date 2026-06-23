@@ -982,7 +982,7 @@ class _PasswordDialog(_DraggableDialog):
         super().__init__(parent)
         self._expected = expected
         self.setModal(True)
-        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setMinimumWidth(_s(480))
 

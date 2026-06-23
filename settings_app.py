@@ -983,7 +983,7 @@ def main():
         expected_pwd = load_config().get('settings_password', '')
     except Exception:
         expected_pwd = ''
-    if expected_pwd:
+    if expected_pwd and '--authenticated' not in sys.argv:
         from ui.dialogs import _PasswordDialog
         dlg = _PasswordDialog(expected_pwd)
         if dlg.exec_() != QDialog.Accepted:

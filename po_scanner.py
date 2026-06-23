@@ -103,6 +103,7 @@ import ui.ui_utils as ui_utils
 from ui.dialogs import (
     _DraggableDialog, AlertDialog, _SaveWarnDialog, TrackingEditDialog,
     _POEditDialog, _EditAllDialog, _POConfirmDialog, _PCPickerDialog,
+    _PasswordDialog,
 )
 
 # ── Carrier definitions (single source of truth) ──────────────────────────────
@@ -2246,7 +2247,9 @@ class ScanTablePage(GradientWidget):
                 return
         self.back_requested.emit()
 
-    def reset(self, carrier: str = ''):
+    def reset(self, carrier: str = '') -> bool:
+        """Reset the table and load today's saved records for the given carrier.
+        Returns False if the CSV folder is unreachable (network not connected)."""
         self._scan_row       = 0
         self._loaded_count   = 0
         self._bcode_buf      = ''
@@ -2254,6 +2257,13 @@ class ScanTablePage(GradientWidget):
         self._table.setRowCount(0)
 
         records = _load_csv_carrier(self._config, carrier) if carrier else []
+        if records is None:
+            while 3 > self._table.rowCount():
+                self._append_row()
+            self._highlight_scan_row()
+            self._update_count()
+            return False
+
         for tracking, po, number, rn, pc in records:
             self._append_row()
             r = self._table.rowCount() - 1
@@ -2270,6 +2280,7 @@ class ScanTablePage(GradientWidget):
             self._append_row()
         self._highlight_scan_row()
         self._update_count()
+        return True
 
     # ── Barcode scanner event filter ──────────────────────────────────────────
 
@@ -2615,13 +2626,18 @@ class MainWindow(QMainWindow):
             self._cfg_watcher.addPath(path)
 
     def _open_settings(self):
+        pwd = self._config.get('settings_password', '')
+        if pwd:
+            dlg = _PasswordDialog(pwd, parent=self)
+            if dlg.exec_() != QDialog.Accepted:
+                return
         try:
             if getattr(sys, 'frozen', False):
                 settings_exe = Path(sys.executable).parent / 'settings.exe'
-                subprocess.Popen([str(settings_exe)])
+                subprocess.Popen([str(settings_exe), '--authenticated'])
             else:
                 settings_py = Path(__file__).parent / 'settings_app.py'
-                subprocess.Popen([sys.executable, str(settings_py)])
+                subprocess.Popen([sys.executable, str(settings_py), '--authenticated'])
         except Exception as e:
             AlertDialog(f'Could not open Settings:\n{e}', self).exec_()
 
@@ -2659,7 +2675,14 @@ class MainWindow(QMainWindow):
 
     def _on_carrier_selected(self, carrier: str):
         self._scan_page.set_carrier(carrier)
-        self._scan_page.reset(carrier)
+        ok = self._scan_page.reset(carrier)
+        if not ok:
+            AlertDialog(
+                'Cannot access the CSV folder.\n\n'
+                'Please connect to the network drive and try again.',
+                self
+            ).exec_()
+            return
         self._stack.setCurrentWidget(self._scan_page)
         self._gear_btn.hide()
 
@@ -2746,16 +2769,20 @@ def _save_csv(config: dict, carrier: str, new_rows: list) -> 'tuple[bool, str]':
         return False, str(e)
 
 
-def _load_csv_carrier(config: dict, carrier: str) -> list:
-    """Read today's CSV rows for the given carrier. Returns [(tracking, po, number, rn, pc), ...]"""
+def _load_csv_carrier(config: dict, carrier: str) -> 'list | None':
+    """Read today's CSV rows for the given carrier.
+    Returns [(tracking, po, number, rn, pc), ...], empty list if file missing,
+    or None if the folder is unreachable (e.g. network drive not authenticated)."""
     import csv
+    import concurrent.futures
     from datetime import date
 
     today_str = date.today().isoformat()
     p = _csv_path(config)
-    if not p.exists():
-        return []
-    try:
+
+    def _read():
+        if not p.exists():
+            return []
         with open(p, 'r', newline='', encoding='utf-8') as f:
             result = []
             for row in csv.DictReader(f):
@@ -2770,8 +2797,17 @@ def _load_csv_carrier(config: dict, carrier: str) -> list:
                             row.get('PC',     '').strip(),
                         ))
         return result
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(_read)
+    try:
+        return future.result(timeout=5.0)
+    except concurrent.futures.TimeoutError:
+        return None
     except Exception:
         return []
+    finally:
+        executor.shutdown(wait=False)
 
 
 
