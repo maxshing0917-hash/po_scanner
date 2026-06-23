@@ -19,7 +19,21 @@ from PyQt5.QtCore import Qt, QObject, QEvent
 from PyQt5.QtNetwork import QLocalServer, QLocalSocket
 from PyQt5.QtGui import QFont, QIcon
 
-import yaml  # PyYAML (already a project dependency)
+import yaml          # PyYAML (already a project dependency)
+import zipfile
+from xml.etree import ElementTree as ET
+
+# Register OOXML namespaces once at import time so ET serialises them correctly
+for _prefix, _uri in {
+    '':      'http://schemas.openxmlformats.org/spreadsheetml/2006/main',
+    'r':     'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
+    'mc':    'http://schemas.openxmlformats.org/markup-compatibility/2006',
+    'x14ac': 'http://schemas.microsoft.com/office/spreadsheetml/2009/9/ac',
+    'xr':    'http://schemas.microsoft.com/office/spreadsheetml/2014/revision',
+    'xr2':   'http://schemas.microsoft.com/office/spreadsheetml/2015/revision2',
+    'xr3':   'http://schemas.microsoft.com/office/spreadsheetml/2016/revision3',
+}.items():
+    ET.register_namespace(_prefix, _uri)
 
 # ── DPI-relative scale ────────────────────────────────────────────────────────
 
@@ -325,6 +339,72 @@ class _AutofillRuleDialog(QDialog):
             'rn': self._rn_edit.text().strip(),
             'pc': self._pc_combo.currentText(),
         }
+
+
+# ── Excel J1 embed (zip-level surgery, no Excel required) ─────────────────────
+
+_MNS = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+_RNS = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+
+
+def _embed_j1_in_xlsm(xlsm_path: str, value: str) -> None:
+    """Write value to _Data!J1 without Excel or openpyxl.
+
+    Why not win32com?  Tablet has no Excel installed.
+    Why not openpyxl?  openpyxl(keep_vba=True) strips Form buttons from day sheets on save.
+
+    Solution: xlsm is a zip of XML files. We open the zip with Python's built-in
+    zipfile, locate the _Data sheet XML via workbook.xml + workbook.xml.rels,
+    do a targeted string replacement to set/insert the J1 cell, then repack.
+    Only the _Data sheet bytes change; every other file is copied as-is.
+    re.sub uses lambda replacements (not f-strings) to avoid \P \T etc. in
+    Windows paths being misread as regex escape sequences."""
+    import re
+
+    esc = value.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+    j1_xml = f'<c r="J1" t="inlineStr"><is><t>{esc}</t></is></c>'
+
+    with zipfile.ZipFile(xlsm_path, 'r') as zin:
+        # Locate _Data sheet file inside the zip
+        wb_root = ET.fromstring(zin.read('xl/workbook.xml'))
+        data_rid = next(
+            (sh.get(f'{{{_RNS}}}id') for sh in wb_root.iter(f'{{{_MNS}}}sheet')
+             if sh.get('name') == '_Data'),
+            None,
+        )
+        if not data_rid:
+            raise ValueError('_Data sheet not found in workbook.xml')
+
+        rels_root = ET.fromstring(zin.read('xl/_rels/workbook.xml.rels'))
+        sheet_file = next(
+            (f'xl/{rel.get("Target")}' if not rel.get('Target', '').startswith('xl/') else rel.get('Target')
+             for rel in rels_root if rel.get('Id') == data_rid),
+            None,
+        )
+        if not sheet_file:
+            raise ValueError('_Data sheet path not found in rels')
+
+        raw = zin.read(sheet_file).decode('utf-8')
+
+        # Surgical edit — only touch J1, leave everything else byte-for-byte identical
+        if re.search(r'<c r="J1"', raw):
+            raw = re.sub(r'<c r="J1"[^/]*/>', lambda _: j1_xml, raw)
+            raw = re.sub(r'<c r="J1"[^>]*>.*?</c>', lambda _: j1_xml, raw, flags=re.DOTALL)
+        elif re.search(r'<row r="1"[^>]*>', raw):
+            raw = re.sub(r'(<row r="1"[^>]*>)', lambda m: m.group(1) + j1_xml, raw)
+        elif '<sheetData/>' in raw:
+            raw = raw.replace('<sheetData/>', f'<sheetData><row r="1">{j1_xml}</row></sheetData>', 1)
+        else:
+            raw = re.sub(r'(<sheetData[^>]*>)', lambda m: m.group(1) + f'<row r="1">{j1_xml}</row>', raw, count=1)
+
+        new_sheet = raw.encode('utf-8')
+
+        tmp = xlsm_path + '.tmp'
+        with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as zout:
+            for info in zin.infolist():
+                zout.writestr(info, new_sheet if info.filename == sheet_file else zin.read(info.filename))
+
+    os.replace(tmp, xlsm_path)
 
 
 # ── Main window ───────────────────────────────────────────────────────────────
@@ -716,22 +796,9 @@ class SettingsWindow(QMainWindow):
             prog.setValue(1)
             QApplication.processEvents()
             try:
-                import win32com.client
-                xl = win32com.client.Dispatch('Excel.Application')
-                xl.Visible = False
-                xl.DisplayAlerts = False
-                try:
-                    wb = xl.Workbooks.Open(first_dest)
-                    try:
-                        wb.Worksheets('_Data').Cells(1, 10).Value = csv_folder
-                    except Exception as e_inner:
-                        QMessageBox.warning(self, 'Embed warning', f'Could not write _Data!J1:\n{e_inner}')
-                    wb.Save()
-                    wb.Close(False)
-                finally:
-                    xl.Quit()
+                _embed_j1_in_xlsm(first_dest, csv_folder)
             except Exception as e_outer:
-                QMessageBox.warning(self, 'Embed failed', f'win32com error:\n{e_outer}')
+                QMessageBox.warning(self, 'Embed failed', f'Could not write _Data!J1:\n{e_outer}')
 
         # Step 2: copy first file → remaining 11
         for i, (m, dest) in enumerate(zip(_MONTHS[1:], targets[1:]), start=1):
