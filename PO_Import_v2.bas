@@ -565,3 +565,35 @@ FileError:
     MsgBox "Cannot open CSV file:" & vbLf & csvPath & vbLf & vbLf & _
            "Make sure it is not open in another application.", vbCritical, "PO Import"
 End Sub
+
+' -- Public: lock buttons on all 30 day sheets (no password) -------------------
+
+Public Sub LockAllSheetsButtons()
+    Dim wb As Workbook: Set wb = ActiveWorkbook
+    Dim ws As Worksheet
+    Dim shp As Shape
+    Dim count As Integer: count = 0
+
+    Application.ScreenUpdating = False
+
+    For Each ws In wb.Worksheets
+        If ws.Name = DATA_SHEET Then GoTo NextSheet
+        If Not IsNumeric(ws.Name) Then GoTo NextSheet
+
+        ws.Unprotect
+        ws.Cells.Locked = False
+
+        For Each shp In ws.Shapes
+            shp.Locked = True
+        Next shp
+
+        ws.Protect DrawingObjects:=True, Contents:=True, _
+                   AllowFormattingCells:=True, AllowFiltering:=True
+
+        count = count + 1
+NextSheet:
+    Next ws
+
+    Application.ScreenUpdating = True
+    MsgBox "Done! Buttons locked on " & count & " sheets.", vbInformation, "Lock Buttons"
+End Sub
