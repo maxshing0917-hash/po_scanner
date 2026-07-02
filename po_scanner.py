@@ -1745,7 +1745,7 @@ class ScanTablePage(GradientWidget):
 
     def _build_steps(self):
         w = QWidget()
-        w.setFixedHeight(_s(52))
+        w.setFixedHeight(_s(86))
         w.setStyleSheet(f'background: {P["bg_end"]}; border-radius: {_s(8)}px;')
         lo = QHBoxLayout(w)
         lo.setContentsMargins(_s(12), 0, _s(12), 0)
@@ -1755,8 +1755,8 @@ class ScanTablePage(GradientWidget):
         ab_lo = QHBoxLayout(self._action_bar)
         ab_lo.setContentsMargins(0, 0, 0, 0)
         ab_lo.setSpacing(_s(8))
-        self._edit_action_btn = _mk_btn('Edit',   P['btn_pri'], h=44, fs=18, min_w=120)
-        self._del_action_btn  = _mk_btn('Delete', '#CC2222',   h=44, fs=18, min_w=120)
+        self._edit_action_btn = _mk_btn('Edit',   P['btn_pri'], h=70, fs=24, min_w=160)
+        self._del_action_btn  = _mk_btn('Delete', '#CC2222',   h=70, fs=24, min_w=160)
         self._edit_action_btn.clicked.connect(self._on_action_edit)
         self._del_action_btn.clicked.connect(self._on_action_delete)
         ab_lo.addWidget(self._edit_action_btn)
@@ -1773,7 +1773,7 @@ class ScanTablePage(GradientWidget):
     def _build_header(self):
         w = QWidget()
         w.setStyleSheet('background: transparent;')
-        w.setFixedHeight(_s(76))
+        w.setFixedHeight(_s(104))
         h = QHBoxLayout(w)
         h.setContentsMargins(0, 0, 0, 0)
         h.setSpacing(_s(12))
@@ -2552,8 +2552,8 @@ class MainWindow(QMainWindow):
         # Floating close button (fullscreen has no window chrome)
         self._close_btn = QPushButton('✕')
         self._close_btn.setParent(self)
-        self._close_btn.setFixedSize(_s(52), _s(52))
-        self._close_btn.setFont(QFont('Segoe UI', _s(16), QFont.Bold))
+        self._close_btn.setFixedSize(_s(70), _s(70))
+        self._close_btn.setFont(QFont('Segoe UI', _s(22), QFont.Bold))
         self._close_btn.setStyleSheet(f"""
             QPushButton {{
                 background: rgba(180,60,60,220); color: white;
@@ -2567,8 +2567,8 @@ class MainWindow(QMainWindow):
         # Floating minimize button
         self._min_btn = QPushButton('—')
         self._min_btn.setParent(self)
-        self._min_btn.setFixedSize(_s(52), _s(52))
-        self._min_btn.setFont(QFont('Segoe UI', _s(16), QFont.Bold))
+        self._min_btn.setFixedSize(_s(70), _s(70))
+        self._min_btn.setFont(QFont('Segoe UI', _s(22), QFont.Bold))
         self._min_btn.setStyleSheet(f"""
             QPushButton {{
                 background: rgba(100,100,100,200); color: white;
