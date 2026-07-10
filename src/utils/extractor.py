@@ -5,7 +5,7 @@ PO numbers are scanned from physical package labels via OCR, which frequently
 misreads certain characters (O↔0, I↔1/L, S↔5, G↔6). The correction rules
 in this module exist to recover valid POs from these misreadings.
 
-Some rules are carrier-specific (e.g. SG vendor POs, PC prefix conventions)
+Some rules are carrier-specific (e.g. SG/SH vendor POs, PC prefix conventions)
 and were added based on observed OCR errors from real scan data.
 """
 
@@ -21,8 +21,8 @@ _PO_FULL = re.compile(r'^[AWSIBXN][A-Z0-9]{6}\d{3}[A-Z0-9]{6}$', re.IGNORECASE)
 # Short 7-char (PO 2 + Number 5)
 _PO_7CHAR = re.compile(r'^[AWSIBXN][A-Z0-9]{6}$', re.IGNORECASE)
 
-# SG vendor PO: SG + 7 digits (no RN, no PC)
-_PO_SG = re.compile(r'^SG\d{7}$', re.IGNORECASE)
+# SG/SH vendor PO: (SG|SH) + 7 digits (no RN, no PC)
+_PO_SG = re.compile(r'^(?:SG|SH)\d{7}$', re.IGNORECASE)
 
 _PO_VALID_STARTS = set('AWSIBXN')
 
@@ -48,7 +48,7 @@ def _normalize_token(token: str) -> str:
     """
     Apply all OCR corrections to a potential PO token.
     Step 1 — first char: '1'/'L' → 'I' for standard PO lengths (7/15-16 chars);
-             '5' → 'S' for SG vendor PO length (9 chars).
+             '5' → 'S' for SG/SH vendor PO length (9 chars).
     Step 2 — second char: delegate to _fix_po_second_char (O→0, I→1, S+6→SG).
     """
     if len(token) in (7, 15, 16) and token[0] in ('1', 'L'):

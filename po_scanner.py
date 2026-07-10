@@ -1228,6 +1228,7 @@ class POCameraDialog(QDialog):
                                tracking_tail=self._tracking_tail,
                                autofill_rules=self._config.get('po_autofill', []),
                                preset=self._prefill,
+                               prev_po_parts=self._last_po_parts,
                                retake_label='Cancel')
         if dlg.exec_() == QDialog.Accepted:
             self.po_value     = dlg.po_value
@@ -1698,8 +1699,11 @@ class ScanTablePage(GradientWidget):
     at least one row is missing a PO. Runs POCameraDialog sequentially;
     falls back to _POConfirmDialog if camera fails mid-batch.
 
-    Save: appends new rows to monthly CSV, then calls reset() to reload
-    the table (saved rows become green read-only).
+    Save: upserts every unlocked row into the monthly CSV, keyed by Package#
+    (= row position). Complete rows (tracking + PO) lock and turn green;
+    partial rows (only tracking or only PO) still get saved as pending
+    (yellow) so their package number is never reclaimed by a later row —
+    they stay editable in place until completed and re-saved.
 
     Emits back_requested() when user switches carrier or save-and-leave.
     """
@@ -1715,9 +1719,24 @@ class ScanTablePage(GradientWidget):
         #            Always kept at least 3 rows ahead of the last filled row.
         self._scan_row      = 0
 
-        # _loaded_count: number of rows loaded from CSV on page entry (read-only, shown in green).
-        #                New scans are appended after this index.
-        self._loaded_count  = 0
+        # _rescan_row: >=0 when the user tapped an already-filled Tracking cell to
+        # flag a mis-scan — the *next* barcode scan overwrites that row's Tracking
+        # cell directly instead of landing on _scan_row. Reset to -1 whenever
+        # selection changes to anything that isn't another filled-Tracking tap.
+        self._rescan_row    = -1
+
+        # _row_locked:   per-row bool — True = complete (tracking+PO), green, read-only.
+        # _row_from_csv: per-row bool — True = a CSV record exists for this row's Package#
+        #                (whether complete/green or partial/yellow). Deleting a row never
+        #                removes the table row itself (that would shift every later row's
+        #                Package# out from under it) — it only clears the cells; if
+        #                from_csv was True, the actual CSV line is removed on the next Save.
+        # _row_dirty:    per-row bool — True = cells were written since the last save (or
+        #                since load), so _has_unsaved_data() must still warn even though a
+        #                pending (yellow) row already has *some* CSV record for it.
+        self._row_locked: list    = []
+        self._row_from_csv: list  = []
+        self._row_dirty: list     = []
 
         # _bcode_buf: accumulates keystrokes from a physical barcode scanner (keyboard emulation).
         #             Flushed to the table when Enter/Return is received.
@@ -1931,6 +1950,9 @@ class ScanTablePage(GradientWidget):
             item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
             item.setForeground(QColor(P['text']))
             self._table.setItem(row, c, item)
+        self._row_locked.append(False)
+        self._row_from_csv.append(False)
+        self._row_dirty.append(False)
 
     # Placeholder text for each column when the row is empty
     _PLACEHOLDER_TEXT = ['Scan directly or tap to enter manually', 'Tap to open camera', '—', '—', '—']
@@ -1938,6 +1960,7 @@ class ScanTablePage(GradientWidget):
     def _set_highlight(self, row: int):
         """Tap-select a row: red background, action bar, hide scan indicator."""
         self._hl_row = row
+        self._rescan_row = -1
         for r in range(self._table.rowCount()):
             bg = QColor('#FF9999') if r == row else QColor('white')
             for c in range(N_COLS):
@@ -1954,6 +1977,7 @@ class ScanTablePage(GradientWidget):
     def _clear_highlight(self):
         """Clear tap-row selection only. Scan indicator is not changed."""
         self._hl_row = -1
+        self._rescan_row = -1
         for r in range(self._table.rowCount()):
             for c in range(N_COLS):
                 item = self._table.item(r, c)
@@ -1975,9 +1999,14 @@ class ScanTablePage(GradientWidget):
         row = self._hl_row
         if row < 0:
             return
-        if row < self._loaded_count:
-            AlertDialog('Saved records cannot be edited here.\nPlease edit directly in Excel.', self).exec_()
-            return
+        if self._row_locked[row]:
+            if _SaveWarnDialog(
+                'This record was already saved and synced to Excel.<br><br>'
+                '<span style="color:#9B9B9B;font-size:90%;">Editing it here will update '
+                'Excel the next time Sync is pressed there.</span>',
+                self, confirm_text='Edit Anyway', confirm_color=P['btn_pri'],
+            ).exec_() != QDialog.Accepted:
+                return
 
         def _cell_val(c):
             it = self._table.item(row, c)
@@ -1998,8 +2027,9 @@ class ScanTablePage(GradientWidget):
             item = QTableWidgetItem(val)
             item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
             item.setForeground(QColor(P['text']))
-            item.setData(Qt.UserRole, False)    
+            item.setData(Qt.UserRole, False)
             self._table.setItem(row, col_idx, item)
+        self._row_dirty[row] = True
 
         self._set_highlight(row)
         self._update_placeholders()
@@ -2009,7 +2039,7 @@ class ScanTablePage(GradientWidget):
         row = self._hl_row
         if row < 0:
             return
-        if row < self._loaded_count:
+        if self._row_locked[row]:
             AlertDialog('Saved records cannot be deleted here.\nPlease edit directly in Excel.', self).exec_()
             return
         def _val(col):
@@ -2017,11 +2047,17 @@ class ScanTablePage(GradientWidget):
             return it.text().strip() if it and it.text().strip() and not it.data(Qt.UserRole) else ''
         trk_text = _val(COL_TRK) or '—'
         po_text  = ' '.join(v for v in (_val(COL_PO), _val(COL_NUM), _val(COL_RN), _val(COL_PC)) if v) or '—'
-        has_trk  = trk_text != '—'
+        from_csv = self._row_from_csv[row]
+        extra_note = (
+            '<br><br><span style="color:#9B9B9B;font-size:90%;">This record has already been '
+            'saved — it will be removed from the CSV the next time you press Save. Switching '
+            'carrier or closing the app before saving will bring it back.</span>' if from_csv else ''
+        )
         dlg = _SaveWarnDialog(
             f'Delete Package <b>#{row + 1}</b>?<br><br>'
             f'Tracking:&nbsp;&nbsp;{trk_text}<br>'
-            f'PO:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{po_text}',
+            f'PO:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{po_text}'
+            f'{extra_note}',
             self,
             confirm_text='Delete',
             confirm_color='#CC2222',
@@ -2029,13 +2065,27 @@ class ScanTablePage(GradientWidget):
         if dlg.exec_() != QDialog.Accepted:
             return
         self._clear_highlight()
-        self._table.removeRow(row)
-        for r in range(self._table.rowCount()):
-            hdr = self._table.verticalHeaderItem(r)
-            if hdr:
-                hdr.setText(str(r + 1))
+
+        # Always clear in place, never removeRow: shifting rows would misalign every
+        # later row's table position against its already-saved Package# in the CSV.
+        # This also means "delete" never needs to guess whether it's safe to shrink
+        # the table — the row's slot simply stays reserved and re-enterable.
+        # If it had a CSV record (from_csv), that's only actually removed on the next
+        # Save (which detects the now-empty row) — so an unsaved delete is reversible,
+        # same as an abandoned Edit.
+        for col_idx in range(N_COLS):
+            item = QTableWidgetItem('')
+            item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+            item.setForeground(QColor(P['text']))
+            self._table.setItem(row, col_idx, item)
+        self._row_dirty[row] = True
+
+        # Reclaim this slot for the next scan if it was already behind the scan
+        # pointer — otherwise the next barcode scan would skip straight past this
+        # now-empty row and leave it permanently unfilled.
         if row < self._scan_row:
-            self._scan_row = max(0, self._scan_row - 1)
+            self._scan_row = row
+
         while self._scan_row + 3 > self._table.rowCount():
             self._append_row()
         self._highlight_scan_row()
@@ -2046,7 +2096,9 @@ class ScanTablePage(GradientWidget):
         # Tracking placeholder → always at _scan_row (next scan target).
         # PO placeholder → first row that has tracking but none of PO/Number/RN/PC filled (falls back to _scan_row).
         po_ph_row = self._scan_row
-        for r in range(self._loaded_count, self._table.rowCount()):
+        for r in range(self._table.rowCount()):
+            if self._row_locked[r]:
+                continue  # complete/green rows are read-only, never need a hint
             trk = self._table.item(r, COL_TRK)
             has_trk = trk and trk.text().strip() and not trk.data(Qt.UserRole)
             has_po  = any(
@@ -2058,7 +2110,9 @@ class ScanTablePage(GradientWidget):
                 po_ph_row = r
                 break
 
-        for r in range(self._loaded_count, self._table.rowCount()):
+        for r in range(self._table.rowCount()):
+            if self._row_locked[r]:
+                continue  # same — locked rows' cells are never placeholders
             for c in range(N_COLS):
                 item = self._table.item(r, c)
                 if item is None:
@@ -2227,9 +2281,20 @@ class ScanTablePage(GradientWidget):
         self._worker_proc = proc
 
     def _has_unsaved_data(self) -> bool:
-        for r in range(self._loaded_count, self._table.rowCount()):
-            item = self._table.item(r, COL_TRK)
-            if item and item.text().strip() and not item.data(Qt.UserRole):
+        """True if any unlocked row has a change Save would actually act on —
+        either real cell content that isn't in the CSV yet, or a pending (yellow)
+        row that got cleared (a deletion Save still needs to commit). A row that
+        was typed into and then cleared again nets out to nothing and must not
+        count — _row_dirty alone can't distinguish that from a real change."""
+        for r in range(self._table.rowCount()):
+            if self._row_locked[r] or not self._row_dirty[r]:
+                continue
+            has_content = any(
+                (self._table.item(r, c) and self._table.item(r, c).text().strip()
+                 and not self._table.item(r, c).data(Qt.UserRole))
+                for c in range(N_COLS)
+            )
+            if has_content or self._row_from_csv[r]:
                 return True
         return False
 
@@ -2249,12 +2314,16 @@ class ScanTablePage(GradientWidget):
 
     def reset(self, carrier: str = '') -> bool:
         """Reset the table and load today's saved records for the given carrier.
-        Returns False if the CSV folder is unreachable (network not connected)."""
+        Rows are rebuilt by Package# (1..max), so a package that was never fully
+        captured leaves a blank, reusable gap instead of shifting later packages'
+        numbers. Returns False if the CSV folder is unreachable (network not connected)."""
         self._scan_row       = 0
-        self._loaded_count   = 0
         self._bcode_buf      = ''
         self._trk_gap_warned = False
         self._table.setRowCount(0)
+        self._row_locked     = []
+        self._row_from_csv   = []
+        self._row_dirty      = []
 
         records = _load_csv_carrier(self._config, carrier) if carrier else []
         if records is None:
@@ -2264,23 +2333,48 @@ class ScanTablePage(GradientWidget):
             self._update_count()
             return False
 
-        for tracking, po, number, rn, pc in records:
+        by_pkg = {pkg: (tracking, po, number, rn, pc) for pkg, tracking, po, number, rn, pc in records}
+        max_pkg = max(by_pkg) if by_pkg else 0
+
+        for pkg in range(1, max_pkg + 1):
             self._append_row()
             r = self._table.rowCount() - 1
+            rec = by_pkg.get(pkg)
+            if rec is None:
+                continue
+            tracking, po, number, rn, pc = rec
+            has_trk = bool(tracking)
+            has_po  = bool(po or number or rn or pc)
+            complete = has_trk and has_po
+            color = QColor('#16A34A') if complete else QColor(P['pending'])
             for col_idx, val in enumerate([tracking, po, number, rn, pc]):
                 item = QTableWidgetItem(val)
                 item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-                item.setForeground(QColor('#16A34A'))
+                item.setForeground(color)
                 item.setData(Qt.UserRole, False)
                 self._table.setItem(r, col_idx, item)
+            self._row_locked[r]   = complete
+            self._row_from_csv[r] = True
 
-        self._loaded_count = len(records)
-        self._scan_row = self._loaded_count
+        self._scan_row = max_pkg
         while self._scan_row + 3 > self._table.rowCount():
             self._append_row()
         self._highlight_scan_row()
         self._update_count()
         return True
+
+    def _next_empty_scan_row(self, start: int) -> int:
+        """First row >= start whose Tracking cell is empty. Used to advance the
+        scan pointer past rows that are already filled — e.g. after a mid-batch
+        gap gets deleted and rescanned, the rows after it are still occupied and
+        must not be blindly overwritten by '+1'."""
+        r = start
+        while r < self._table.rowCount():
+            item = self._table.item(r, COL_TRK)
+            if not (item and item.text().strip() and not item.data(Qt.UserRole)):
+                return r
+            r += 1
+        return r
 
     # ── Barcode scanner event filter ──────────────────────────────────────────
 
@@ -2305,6 +2399,23 @@ class ScanTablePage(GradientWidget):
 
     def _commit_tracking(self, tracking: str):
         # Called by the barcode scanner event filter after a valid tracking is received.
+        # Uppercase to match the manual-entry dialog's _force_upper convention —
+        # a scanned value can come through lowercase depending on scanner config.
+        tracking = tracking.strip().upper()
+        if self._rescan_row >= 0:
+            # User tapped a mis-scanned Tracking cell first — overwrite that row
+            # in place instead of advancing the normal _scan_row pointer.
+            row = self._rescan_row
+            item = QTableWidgetItem(tracking)
+            item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+            item.setForeground(QColor(P['text']))
+            item.setData(Qt.UserRole, False)
+            self._table.setItem(row, COL_TRK, item)
+            self._row_dirty[row] = True
+            self._highlight_scan_row()  # also clears _rescan_row via _clear_highlight()
+            self._update_count()
+            return
+
         # Writes to _scan_row, advances it, and keeps 3 empty buffer rows below.
         row = self._scan_row
         while row >= self._table.rowCount():
@@ -2315,8 +2426,9 @@ class ScanTablePage(GradientWidget):
         item.setForeground(QColor(P['text']))
         item.setData(Qt.UserRole, False)
         self._table.setItem(row, COL_TRK, item)
+        self._row_dirty[row] = True
 
-        self._scan_row += 1
+        self._scan_row = self._next_empty_scan_row(row + 1)
         while self._scan_row + 3 > self._table.rowCount():
             self._append_row()
 
@@ -2334,6 +2446,7 @@ class ScanTablePage(GradientWidget):
             item.setForeground(QColor(P['text']))
             item.setData(Qt.UserRole, False)
             self._table.setItem(row, col_idx, item)
+        self._row_dirty[row] = True
         self._update_placeholders()
         self._update_count()
         self._table.scrollToItem(self._table.item(row, COL_PO))
@@ -2341,7 +2454,14 @@ class ScanTablePage(GradientWidget):
     # ── Cell click ────────────────────────────────────────────────────────────
 
     def _on_cell_clicked(self, row: int, col: int):
-        if row < self._loaded_count:
+        if self._row_locked[row]:
+            # Locked rows are read-only for direct cell taps (no inline rescan/
+            # camera flow), but must still be selectable so the Edit action bar
+            # button can operate on them.
+            if self._hl_row == row:
+                self._highlight_scan_row()
+            else:
+                self._set_highlight(row)
             return
         clicked = self._table.item(row, col)
         cell_has_value = bool(clicked and clicked.text().strip() and not clicked.data(Qt.UserRole))
@@ -2350,6 +2470,11 @@ class ScanTablePage(GradientWidget):
                 self._highlight_scan_row()
             else:
                 self._set_highlight(row)
+                if col == COL_TRK:
+                    # Arm rescan: next barcode scan overwrites this row's Tracking
+                    # cell directly, so tapping a mis-scanned Tracking value then
+                    # immediately re-scanning corrects it in place.
+                    self._rescan_row = row
             return
 
         self._highlight_scan_row()
@@ -2406,9 +2531,10 @@ class ScanTablePage(GradientWidget):
             item.setForeground(QColor(P['text']))
             item.setData(Qt.UserRole, False)
             self._table.setItem(row, COL_TRK, item)
+            self._row_dirty[row] = True
             # Advance scan row if user filled the current scan position
             if row == self._scan_row:
-                self._scan_row = row + 1
+                self._scan_row = self._next_empty_scan_row(row + 1)
                 while self._scan_row + 3 > self._table.rowCount():
                     self._append_row()
             self._highlight_scan_row()
@@ -2462,12 +2588,28 @@ class ScanTablePage(GradientWidget):
     # ── Save ──────────────────────────────────────────────────────────────────
 
     def _do_save(self) -> bool:
-        """Collect new rows, show warnings + confirm, write CSV. Returns True on success."""
+        """Collect every unlocked row that actually changed, show confirm, upsert/delete
+        in CSV. Complete rows (tracking + PO) lock and turn green. Partial rows (only
+        tracking or only PO) still get saved — as pending (yellow), keyed by their row
+        position (pkg = row+1) so later rows' numbers never shift — and stay editable
+        until completed. A row that was previously saved but is now empty (e.g. cleared
+        via Delete) is treated as a pending deletion: its CSV record is only actually
+        removed here, not at Delete-click time — so abandoning a delete without saving
+        reverts it, same as an Edit. Pending rows that already have a CSV record and
+        haven't been touched since (_row_dirty False) are skipped entirely — nothing
+        to re-save, and no reason to nag about them every time Save is pressed. A locked
+        row that was edited via _on_action_edit (_row_dirty True) is re-saved too — the
+        CSV upsert overwrites its existing record, and PO_Import_v2.bas picks up the
+        change on the next Excel sync. Returns True on success."""
         rows = []
-        missing_po = []
-        orphan_po  = []
+        to_delete = []
+        pending_nums = []
 
-        for r in range(self._loaded_count, self._table.rowCount()):
+        for r in range(self._table.rowCount()):
+            if self._row_locked[r] and not self._row_dirty[r]:
+                continue
+            if self._row_from_csv[r] and not self._row_dirty[r]:
+                continue  # already-saved pending row, untouched since — nothing to do
             def _v(c, _r=r):
                 it = self._table.item(_r, c)
                 return it.text().strip() if (it and not it.data(Qt.UserRole)) else ''
@@ -2478,51 +2620,84 @@ class ScanTablePage(GradientWidget):
             pc     = _v(4)
             has_trk = bool(trk)
             has_po  = bool(po or number or rn or pc)
-            if has_trk:
-                rows.append((trk, po, number, rn, pc))
-                if not has_po:
-                    missing_po.append(r + 1)
-            elif has_po:
-                orphan_po.append(r + 1)
-                rows.append(('', po, number, rn, pc))
+            if not has_trk and not has_po:
+                if self._row_from_csv[r]:
+                    to_delete.append(r + 1)
+                continue
+            rows.append((r + 1, trk, po, number, rn, pc))
+            if not (has_trk and has_po):
+                pending_nums.append(r + 1)
 
-        if not rows:
-            AlertDialog('No new records to save.', self).exec_()
+        if not rows and not to_delete:
+            AlertDialog('No changes to save.', self).exec_()
             return False
 
-        warnings = []
-        if missing_po:
-            nums = ', '.join(f'#{n}' for n in missing_po)
-            warnings.append(f'Package(s) {nums} have tracking but <span style="color:#EF4444;">no PO number</span>.')
-        if orphan_po:
-            nums = ', '.join(f'#{n}' for n in orphan_po)
-            warnings.append(f'Package(s) {nums} have a PO but <span style="color:#EF4444;">no tracking number</span>.')
-
-        if warnings:
-            if _SaveWarnDialog('<br><br>'.join(warnings), self,
-                               confirm_text='Continue to Save').exec_() != QDialog.Accepted:
-                return False
+        note = ''
+        if pending_nums:
+            nums = ', '.join(f'#{n}' for n in pending_nums)
+            note += (
+                f'<br><br><span style="color:#9B9B9B;font-size:90%;">Package(s) {nums} are still '
+                f'missing Tracking or PO — they will be saved as pending (yellow) and stay editable '
+                f'until completed.</span>'
+            )
+        if to_delete:
+            nums = ', '.join(f'#{n}' for n in to_delete)
+            note += (
+                f'<br><br><span style="color:#9B9B9B;font-size:90%;">Package(s) {nums} were '
+                f'deleted and will be removed from the CSV.</span>'
+            )
 
         carrier_label = self._carrier.upper() if self._carrier else 'current carrier'
         n = len(rows)
+        headline = (
+            f'Save <b>{n}</b> package{"s" if n != 1 else ""} for <b>{carrier_label}</b>?'
+            if n else f'Save changes for <b>{carrier_label}</b>?'
+        )
         if _SaveWarnDialog(
-            f'Save <b>{n}</b> new package{"s" if n != 1 else ""} for <b>{carrier_label}</b>?'
-            f'<br><br><span style="color:#9B9B9B;font-size:90%;">Saved records cannot be edited in this app.<br>To make corrections, edit directly in Excel.</span>',
+            f'{headline}'
+            f'{note}',
             self,
             confirm_text='Confirm Save',
             confirm_color=P['btn_suc'],
         ).exec_() != QDialog.Accepted:
             return False
 
-        ok, err = _save_csv(self._config, self._carrier, rows)
-        if not ok:
-            AlertDialog(f'Cannot save.\n{err}', self).exec_()
-            return False
+        if rows:
+            ok, err = _save_csv(self._config, self._carrier, rows)
+            if not ok:
+                AlertDialog(f'Cannot save.\n{err}', self).exec_()
+                return False
+
+        for pkg in to_delete:
+            ok, err = _delete_csv_row(self._config, self._carrier, pkg)
+            if not ok:
+                AlertDialog(f'Cannot delete.\n{err}', self).exec_()
+                return False
+            r = pkg - 1
+            self._row_locked[r]   = False
+            self._row_from_csv[r] = False
+            self._row_dirty[r]    = False
+
+        for pkg, trk, po, number, rn, pc in rows:
+            r = pkg - 1
+            complete = bool(trk) and bool(po or number or rn or pc)
+            color = QColor('#16A34A') if complete else QColor(P['pending'])
+            for col_idx, val in enumerate([trk, po, number, rn, pc]):
+                item = QTableWidgetItem(val)
+                item.setTextAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+                item.setForeground(color)
+                item.setData(Qt.UserRole, False)
+                self._table.setItem(r, col_idx, item)
+            self._row_locked[r]   = complete
+            self._row_from_csv[r] = True
+            self._row_dirty[r]    = False
+
         return True
 
     def _on_save(self):
         if self._do_save():
-            self.reset(self._carrier)
+            self._highlight_scan_row()
+            self._update_count()
 
 
 # ── Main window ───────────────────────────────────────────────────────────────
@@ -2705,6 +2880,16 @@ def _csv_path(config: dict) -> 'Path':
     return Path(folder) / f'PO_{month_name}_{today.year}.csv'
 
 
+_CSV_BACKUP_FOLDER = r'C:\PO Scanner\Template\CSV'
+
+
+def _csv_backup_path(config: dict) -> 'Path':
+    """Local mirror of the monthly CSV, same filename as _csv_path but written
+    to the machine's own install folder instead of the network share — so the
+    data survives if someone deletes the network file/folder."""
+    return Path(_CSV_BACKUP_FOLDER) / _csv_path(config).name
+
+
 def _norm_date(s: str) -> str:
     """Normalise date string to YYYY-MM-DD, accepting 2026-05-27 / 5/27/2026 / 2026/5/27."""
     from datetime import datetime
@@ -2717,7 +2902,11 @@ def _norm_date(s: str) -> str:
 
 
 def _save_csv(config: dict, carrier: str, new_rows: list) -> 'tuple[bool, str]':
-    """Append new rows to monthly CSV, skipping tracking numbers already saved today.
+    """Upsert rows into the monthly CSV, keyed by (today, carrier, Package#).
+    new_rows: [(pkg, tracking, po, number, rn, pc), ...] — pkg is the row's table
+    position (row+1), a stable identity so completing/editing a pending row later
+    overwrites its existing line instead of appending a duplicate. All other
+    lines (other dates, other carriers, other package numbers) are preserved as-is.
     Runs file I/O in a background thread with a 10s timeout to avoid freezing if
     the network drive disconnects mid-save."""
     import csv
@@ -2731,39 +2920,49 @@ def _save_csv(config: dict, carrier: str, new_rows: list) -> 'tuple[bool, str]':
     p = _csv_path(config)
 
     def _do_save():
-        existing_trackings: set = set()
-        pkg_count = 0
-        file_has_content = p.exists() and p.stat().st_size > 0
+        by_pkg = {pkg: (tracking, po, number, rn, pc) for pkg, tracking, po, number, rn, pc in new_rows}
 
-        if file_has_content:
+        kept_rows = []
+        if p.exists() and p.stat().st_size > 0:
             with open(p, 'r', newline='', encoding='utf-8') as f:
                 for row in csv.DictReader(f):
                     if _norm_date(row.get('Date', '')) == today_str and row.get('Carrier', '').lower() == carrier.lower():
-                        pkg_count += 1
-                        t = row.get('Tracking', '').strip().lstrip("'")
-                        if t:
-                            existing_trackings.add(t)
+                        try:
+                            pkg = int(row.get('Package#', '').strip())
+                        except (ValueError, TypeError):
+                            kept_rows.append(row)
+                            continue
+                        if pkg in by_pkg:
+                            continue  # superseded by the upsert below
+                    kept_rows.append(row)
 
-        to_append = [r for r in new_rows if not r[0] or r[0] not in existing_trackings]
-        if not to_append:
-            return True, ''
+        for pkg, (tracking, po, number, rn, pc) in by_pkg.items():
+            kept_rows.append({
+                'Date':     today_str,
+                'Carrier':  carrier,
+                'Package#': pkg,
+                'Tracking': ("'" + tracking) if tracking else '',
+                'PO':       po,
+                'Number':   number,
+                'RN':       rn,
+                'PC':       pc,
+            })
 
-        mode = 'a' if file_has_content else 'w'
-        with open(p, mode, newline='', encoding='utf-8') as f:
+        with open(p, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=_CSV_FIELDNAMES)
-            if mode == 'w':
+            writer.writeheader()
+            writer.writerows(kept_rows)
+
+        try:
+            backup_p = _csv_backup_path(config)
+            backup_p.parent.mkdir(parents=True, exist_ok=True)
+            with open(backup_p, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=_CSV_FIELDNAMES)
                 writer.writeheader()
-            for i, (tracking, po, number, rn, pc) in enumerate(to_append):
-                writer.writerow({
-                    'Date':     today_str,
-                    'Carrier':  carrier,
-                    'Package#': pkg_count + i + 1,
-                    'Tracking': ("'" + tracking) if tracking else '',
-                    'PO':       po,
-                    'Number':   number,
-                    'RN':       rn,
-                    'PC':       pc,
-                })
+                writer.writerows(kept_rows)
+        except Exception:
+            pass  # local backup is best-effort; the network save above already succeeded
+
         return True, ''
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -2778,10 +2977,71 @@ def _save_csv(config: dict, carrier: str, new_rows: list) -> 'tuple[bool, str]':
         executor.shutdown(wait=False)
 
 
+def _delete_csv_row(config: dict, carrier: str, pkg: int) -> 'tuple[bool, str]':
+    """Remove today's (carrier, Package#) line from the monthly CSV, leaving all
+    other lines untouched. Same background-thread + timeout protection as _save_csv."""
+    import csv
+    import concurrent.futures
+    from datetime import date
+
+    if not config.get('csv', {}).get('folder', ''):
+        return False, 'CSV folder not configured.'
+
+    today_str = date.today().isoformat()
+    p = _csv_path(config)
+
+    def _do_delete():
+        if not p.exists() or p.stat().st_size == 0:
+            return True, ''
+
+        kept_rows = []
+        with open(p, 'r', newline='', encoding='utf-8') as f:
+            for row in csv.DictReader(f):
+                if (_norm_date(row.get('Date', '')) == today_str
+                        and row.get('Carrier', '').lower() == carrier.lower()):
+                    try:
+                        row_pkg = int(row.get('Package#', '').strip())
+                    except (ValueError, TypeError):
+                        row_pkg = None
+                    if row_pkg == pkg:
+                        continue  # dropped
+                kept_rows.append(row)
+
+        with open(p, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=_CSV_FIELDNAMES)
+            writer.writeheader()
+            writer.writerows(kept_rows)
+
+        try:
+            backup_p = _csv_backup_path(config)
+            backup_p.parent.mkdir(parents=True, exist_ok=True)
+            with open(backup_p, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.DictWriter(f, fieldnames=_CSV_FIELDNAMES)
+                writer.writeheader()
+                writer.writerows(kept_rows)
+        except Exception:
+            pass  # local backup is best-effort; the network delete above already succeeded
+
+        return True, ''
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(_do_delete)
+    try:
+        return future.result(timeout=10.0)
+    except concurrent.futures.TimeoutError:
+        return False, 'Network drive is not responding.\nPlease check your connection and try again.'
+    except Exception as e:
+        return False, str(e)
+    finally:
+        executor.shutdown(wait=False)
+
+
 def _load_csv_carrier(config: dict, carrier: str) -> 'list | None':
     """Read today's CSV rows for the given carrier.
-    Returns [(tracking, po, number, rn, pc), ...], empty list if file missing,
-    or None if the folder is unreachable (e.g. network drive not authenticated)."""
+    Returns [(pkg, tracking, po, number, rn, pc), ...], empty list if file missing,
+    or None if the folder is unreachable (e.g. network drive not authenticated).
+    Rows lacking Tracking (PO-only pending rows) are included too — the caller
+    decides how to render them, keyed by Package# rather than Tracking presence."""
     import csv
     import concurrent.futures
     from datetime import date
@@ -2796,15 +3056,19 @@ def _load_csv_carrier(config: dict, carrier: str) -> 'list | None':
             result = []
             for row in csv.DictReader(f):
                 if _norm_date(row.get('Date', '')) == today_str and row.get('Carrier', '').lower() == carrier.lower():
+                    try:
+                        pkg = int(row.get('Package#', '').strip())
+                    except (ValueError, TypeError):
+                        continue
                     tracking = row.get('Tracking', '').strip().lstrip("'")
-                    if tracking:
-                        result.append((
-                            tracking,
-                            row.get('PO',     '').strip(),
-                            row.get('Number', '').strip(),
-                            row.get('RN',     '').strip(),
-                            row.get('PC',     '').strip(),
-                        ))
+                    result.append((
+                        pkg,
+                        tracking,
+                        row.get('PO',     '').strip(),
+                        row.get('Number', '').strip(),
+                        row.get('RN',     '').strip(),
+                        row.get('PC',     '').strip(),
+                    ))
         return result
 
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)

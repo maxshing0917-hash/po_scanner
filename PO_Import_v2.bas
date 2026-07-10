@@ -129,6 +129,7 @@ Private Function GetDataSheet(wb As Workbook) As Worksheet
         ws.Range("A1:H1").Value = Array("Date", "Carrier", "Package#", _
                                         "Tracking", "PO", "Number", "RN", "PC")
         ws.Columns("D").NumberFormat = "@"
+        ws.Columns("F").NumberFormat = "@"
         ws.Columns("G").NumberFormat = "@"
         ws.Cells(1, 9).Value = Format(Date, "yyyy-mm")  ' workbook month marker
     End If
@@ -138,13 +139,14 @@ End Function
 
 ' -- Refresh display from _Data (all carriers, today) -------------------------
 
-Private Sub RefreshView(ws As Worksheet)
+Private Sub RefreshView(ws As Worksheet, touchedPkgs As Object)
+    ' Only rewrites the rows for packages actually added/updated in this sync
+    ' pass (touchedPkgs). Previously this cleared and redrew the whole day's
+    ' data area on every sync, which silently wiped out any correction someone
+    ' had made by hand directly on this visible sheet since the last sync —
+    ' this scopes the redraw down so untouched rows are left alone.
     Dim ds As Worksheet: Set ds = GetDataSheet(ws.Parent)
     Dim todayStr As String: todayStr = Format(Date, "yyyy-mm-dd")
-
-    ' Clear data area (contents + highlight)
-    ws.Range(ws.Cells(DATA_START_ROW, 1), ws.Cells(100, 27)).Interior.ColorIndex = xlNone
-    ws.Range(ws.Cells(DATA_START_ROW, 2), ws.Cells(100, 27)).ClearContents
 
     Dim dsLast As Long: dsLast = ds.Cells(ds.Rows.Count, 1).End(xlUp).Row
     If dsLast < 2 Then Exit Sub
@@ -152,20 +154,25 @@ Private Sub RefreshView(ws As Worksheet)
     Dim r As Long
     For r = 2 To dsLast
         If Format(ds.Cells(r, 1).Value, "yyyy-mm-dd") = todayStr Then
-            Dim trkCol As Long: trkCol = CarrierCol(CStr(ds.Cells(r, 2).Value))
-            If trkCol = 0 Then GoTo NextRow
-
             Dim pkgNum As Long
             On Error Resume Next
             pkgNum = CLng(ds.Cells(r, 3).Value)
             If Err.Number <> 0 Then Err.Clear: GoTo NextRow
             On Error GoTo 0
 
+            If Not touchedPkgs.exists(pkgNum) Then GoTo NextRow
+
+            Dim trkCol As Long: trkCol = CarrierCol(CStr(ds.Cells(r, 2).Value))
+            If trkCol = 0 Then GoTo NextRow
+
             Dim excelRow As Long: excelRow = pkgNum + 2
+
+            ws.Range(ws.Cells(excelRow, trkCol), ws.Cells(excelRow, trkCol + 4)).Interior.ColorIndex = xlNone
 
             ws.Cells(excelRow, 2).Value = CDate(ds.Cells(r, 1).Value)
 
             ws.Cells(excelRow, trkCol).NumberFormat     = "@"
+            ws.Cells(excelRow, trkCol + 2).NumberFormat = "@"
             ws.Cells(excelRow, trkCol + 3).NumberFormat = "@"
             ws.Cells(excelRow, trkCol).Value     = CStr(ds.Cells(r, 4).Value)
             ws.Cells(excelRow, trkCol + 1).Value = ds.Cells(r, 5).Value
@@ -291,9 +298,11 @@ Private Sub FormatSheet(ws As Worksheet)
     ' Date format on column B
     ws.Columns("B").NumberFormat = "M/D/YYYY"
 
-    ' Force text on Tracking and RN columns
+    ' Force text on Tracking, Number, and RN columns (Number too, so long
+    ' numeric-looking values like OCR'd order numbers don't get turned into
+    ' scientific notation / lose precision)
     Dim textCols As Variant
-    textCols = Array("C", "H", "M", "R", "W", "F", "K", "P", "U", "Z")
+    textCols = Array("C", "H", "M", "R", "W", "F", "K", "P", "U", "Z", "E", "J", "O", "T", "Y")
     Dim tc As Variant
     For Each tc In textCols
         ws.Columns(CStr(tc)).NumberFormat = "@"
@@ -427,14 +436,31 @@ Public Sub ImportTodayFromCSV()
         Exit Sub
     End If
 
-    ' Build dedup set from _Data (today, key = carrier|package#)
+    ' Build dedup maps from _Data (today, key = carrier|package#):
+    '   doneComplete = already has both Tracking and PO — normally left alone, but if
+    '                  po_scanner re-edits an already-saved package (App-side "edit a
+    '                  saved record" flow), the CSV row will differ from what's stored
+    '                  here, and this map holds the row number so we can compare and
+    '                  update it in place (silently, no highlight — see below).
+    '   pendingRow   = still missing Tracking or PO — re-checked every sync and updated in
+    '                  place (not re-appended), since po_scanner may complete it later
+    '                  without its Package# ever changing
     Dim dsLast As Long: dsLast = ds.Cells(ds.Rows.Count, 1).End(xlUp).Row
-    Dim seen As Object: Set seen = CreateObject("Scripting.Dictionary")
+    Dim doneComplete As Object: Set doneComplete = CreateObject("Scripting.Dictionary")
+    Dim pendingRow   As Object: Set pendingRow   = CreateObject("Scripting.Dictionary")
     Dim r As Long
     For r = 2 To dsLast
         If Format(ds.Cells(r, 1).Value, "yyyy-mm-dd") = todayStr Then
             Dim tk As String: tk = LCase(CStr(ds.Cells(r, 2).Value)) & "|" & CStr(ds.Cells(r, 3).Value)
-            seen(tk) = 1
+            Dim rHasTrk As Boolean: rHasTrk = (Trim(CStr(ds.Cells(r, 4).Value)) <> "")
+            Dim rHasPO  As Boolean
+            rHasPO = (Trim(CStr(ds.Cells(r, 5).Value)) <> "") Or (Trim(CStr(ds.Cells(r, 6).Value)) <> "") _
+                     Or (Trim(CStr(ds.Cells(r, 7).Value)) <> "") Or (Trim(CStr(ds.Cells(r, 8).Value)) <> "")
+            If rHasTrk And rHasPO Then
+                doneComplete(tk) = r
+            Else
+                pendingRow(tk) = r
+            End If
         End If
     Next r
 
@@ -487,7 +513,29 @@ Public Sub ImportTodayFromCSV()
         If targetCarrier = "" Then
             Dim dedupKey As String: dedupKey = ck & "|" & Trim(f(iPkg))
             Dim isNew As Boolean
-            isNew = Not seen.exists(dedupKey)
+            If doneComplete.exists(dedupKey) Or pendingRow.exists(dedupKey) Then
+                ' Already imported (complete or still pending) — only counts as "new"
+                ' if something actually changed since last sync. This covers both a
+                ' pending record getting filled in further, and po_scanner editing an
+                ' already-saved/complete record. Otherwise an unchanged package would
+                ' keep re-selecting this carrier as the sync target forever, starving
+                ' every other carrier whose lines come later in the CSV.
+                Dim prevRow As Long
+                If doneComplete.exists(dedupKey) Then
+                    prevRow = doneComplete(dedupKey)
+                Else
+                    prevRow = pendingRow(dedupKey)
+                End If
+                Dim curTrk As String: curTrk = Trim(f(iTrk))
+                If Left(curTrk, 1) = "'" Then curTrk = Mid(curTrk, 2)
+                isNew = Not (CStr(ds.Cells(prevRow, 4).Value) = curTrk _
+                             And CStr(ds.Cells(prevRow, 5).Value) = Trim(f(iPO)) _
+                             And CStr(ds.Cells(prevRow, 6).Value) = Trim(f(iNum)) _
+                             And CStr(ds.Cells(prevRow, 7).Value) = Trim(f(iRN)) _
+                             And CStr(ds.Cells(prevRow, 8).Value) = Trim(f(iPC)))
+            Else
+                isNew = True
+            End If
             If isNew Then targetCarrier = ck
         End If
 
@@ -504,8 +552,9 @@ StoreLine:
     End If
 
     ' Second pass: import up to MAX_PER_SYNC records for targetCarrier
-    Dim added         As Long: added         = 0
-    Dim firstAddedPkg As Long: firstAddedPkg = 0
+    Dim added            As Long: added            = 0
+    Dim firstHlPkg        As Long: firstHlPkg       = 0  ' first non-resync record this pass, for highlighting
+    Dim touchedPkgs As Object: Set touchedPkgs = CreateObject("Scripting.Dictionary")
     Dim idx As Long
     For idx = 1 To lineCount
         If added >= MAX_PER_SYNC Then Exit For
@@ -520,43 +569,106 @@ StoreLine:
         Dim tracking As String: tracking = Trim(fl(iTrk))
         If Left(tracking, 1) = "'" Then tracking = Mid(tracking, 2)
         Dim dk As String:       dk       = targetCarrier & "|" & Trim(fl(iPkg))
-        If seen.exists(dk) Then GoTo NextRow
 
-        ' Append to _Data
+        Dim poVal As String:  poVal  = Trim(fl(iPO))
+        Dim numVal As String: numVal = Trim(fl(iNum))
+        Dim rnVal As String:  rnVal  = Trim(fl(iRN))
+        Dim pcVal As String:  pcVal  = Trim(fl(iPC))
+
+        ' Update the existing row in place if this package was already imported
+        ' (complete or still pending); otherwise append a new row. A complete
+        ' record only reaches here if po_scanner edited an already-saved row —
+        ' that's a silent resync (see firstHlPkg below), not a normal new/
+        ' completed record, so it shouldn't get the "just synced" highlight.
         Dim writeRow As Long
-        writeRow = ds.Cells(ds.Rows.Count, 1).End(xlUp).Row + 1
+        Dim isResync As Boolean: isResync = False
+        If doneComplete.exists(dk) Then
+            writeRow = doneComplete(dk)
+            isResync = True
+        ElseIf pendingRow.exists(dk) Then
+            writeRow = pendingRow(dk)
+        Else
+            writeRow = ds.Cells(ds.Rows.Count, 1).End(xlUp).Row + 1
+        End If
+
+        If doneComplete.exists(dk) Or pendingRow.exists(dk) Then
+            ' Already imported and nothing actually changed since last sync — skip
+            ' entirely so it doesn't steal the "first changed" highlight/count
+            ' from a record that genuinely did change this time.
+            If CStr(ds.Cells(writeRow, 4).Value) = tracking _
+               And CStr(ds.Cells(writeRow, 5).Value) = poVal _
+               And CStr(ds.Cells(writeRow, 6).Value) = numVal _
+               And CStr(ds.Cells(writeRow, 7).Value) = rnVal _
+               And CStr(ds.Cells(writeRow, 8).Value) = pcVal Then
+                GoTo NextRow
+            End If
+        End If
+
         ds.Cells(writeRow, 1).Value        = todayStr
         ds.Cells(writeRow, 2).Value        = targetCarrier
         ds.Cells(writeRow, 3).Value        = CLng(Trim(fl(iPkg)))
         ds.Cells(writeRow, 4).NumberFormat = "@"
         ds.Cells(writeRow, 4).Value        = tracking
-        ds.Cells(writeRow, 5).Value        = Trim(fl(iPO))
-        ds.Cells(writeRow, 6).Value        = Trim(fl(iNum))
+        ds.Cells(writeRow, 5).Value        = poVal
+        ds.Cells(writeRow, 6).NumberFormat = "@"
+        ds.Cells(writeRow, 6).Value        = numVal
         ds.Cells(writeRow, 7).NumberFormat = "@"
-        ds.Cells(writeRow, 7).Value        = Trim(fl(iRN))
-        ds.Cells(writeRow, 8).Value        = Trim(fl(iPC))
+        ds.Cells(writeRow, 7).Value        = rnVal
+        ds.Cells(writeRow, 8).Value        = pcVal
 
-        seen(dk) = 1
-        If firstAddedPkg = 0 Then firstAddedPkg = CLng(Trim(fl(iPkg)))
+        ' Only mark permanently done once it's actually complete — otherwise leave
+        ' it in pendingRow so a later sync re-checks/updates this same row again.
+        If tracking <> "" And (poVal <> "" Or numVal <> "" Or rnVal <> "" Or pcVal <> "") Then
+            doneComplete(dk) = writeRow
+        Else
+            pendingRow(dk) = writeRow
+        End If
+        ' Track the first genuinely new/completed record for highlighting — a
+        ' resync earlier in the file must not suppress the highlight for a real
+        ' new record later in the same sync pass.
+        If Not isResync And firstHlPkg = 0 Then firstHlPkg = CLng(Trim(fl(iPkg)))
+        touchedPkgs(CLng(Trim(fl(iPkg)))) = True
         added = added + 1
 
 NextRow:
     Next idx
 
-    RefreshView ws
+    If added > 0 Then RefreshView ws, touchedPkgs
 
-    If firstAddedPkg > 0 Then
-        Dim hlRow   As Long: hlRow   = firstAddedPkg + 2
+    ' Highlight the first genuinely new/completed record this pass (firstHlPkg
+    ' already skips resyncs — see above). If every touched record this pass was
+    ' a silent resync, firstHlPkg stays 0 and no highlight is applied at all,
+    ' leaving whatever highlight was already there untouched.
+    If firstHlPkg > 0 Then
+        ' Clear whichever cell range was highlighted by the previous sync before
+        ' painting the new one. RefreshView used to reset this for free by wiping
+        ' the whole day every sync; now that it only touches changed rows, this
+        ' "just synced" highlight has to be tracked and cleared explicitly or it
+        ' piles up on every row ever highlighted, forever. Persisted in _Data!K1/L1
+        ' (row/col) so it survives across sync calls and Excel sessions.
+        Dim lastHlRow As Variant: lastHlRow = ds.Cells(1, 11).Value
+        Dim lastHlCol As Variant: lastHlCol = ds.Cells(1, 12).Value
+        If IsNumeric(lastHlRow) And IsNumeric(lastHlCol) And CLng(lastHlRow) > 0 And CLng(lastHlCol) > 0 Then
+            On Error Resume Next
+            ws.Range(ws.Cells(CLng(lastHlRow), CLng(lastHlCol)), _
+                     ws.Cells(CLng(lastHlRow), CLng(lastHlCol) + 4)).Interior.ColorIndex = xlNone
+            On Error GoTo 0
+        End If
+
+        Dim hlRow   As Long: hlRow   = firstHlPkg + 2
         Dim hlStart As Long: hlStart = CarrierCol(targetCarrier)
         ws.Range(ws.Cells(hlRow, hlStart), ws.Cells(hlRow, hlStart + 4)).Interior.Color = RGB(255, 255, 153)
         Application.Goto ws.Cells(hlRow, hlStart), True
+
+        ds.Cells(1, 11).Value = hlRow
+        ds.Cells(1, 12).Value = hlStart
     End If
 
     If added = 0 Then
-        MsgBox "No new records for " & CarrierLabel(targetCarrier) & " today.", _
+        MsgBox "No new or updated records for " & CarrierLabel(targetCarrier) & " today.", _
                vbInformation, "PO Import"
     Else
-        MsgBox added & " record(s) added for " & CarrierLabel(targetCarrier) & ".", _
+        MsgBox added & " record(s) added/updated for " & CarrierLabel(targetCarrier) & ".", _
                vbInformation, "PO Import"
     End If
     Exit Sub

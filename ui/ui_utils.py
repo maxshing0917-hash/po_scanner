@@ -33,6 +33,7 @@ P = {
     'border':     '#E8DCC8',
     'res_bg':     '#EDF7ED',
     'res_border': '#6BA547',
+    'pending':    '#EAB308',
 }
 
 

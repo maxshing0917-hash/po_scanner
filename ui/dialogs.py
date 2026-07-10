@@ -671,9 +671,9 @@ class _POConfirmDialog(_DraggableDialog):
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         raw = po_text.strip().upper()
-        _is_sg = (len(raw) == 9 and raw[:2] == 'SG' and raw[2:].isdigit())
+        _is_sg = (len(raw) == 9 and raw[:2] in ('SG', 'SH') and raw[2:].isdigit())
         if _is_sg:
-            self.po_value     = 'SG'
+            self.po_value     = raw[:2]
             self.number_value = raw[2:]
             self.rn_value     = ''
             self.pc_value     = ''
@@ -729,6 +729,17 @@ class _POConfirmDialog(_DraggableDialog):
         status_lbl.setFont(QFont('Segoe UI', _s(27)))
         status_lbl.setStyleSheet('color: #CCCCCC; background: transparent;')
         lo.addWidget(status_lbl)
+
+        if self._prev_po_parts:
+            prev_bits = [
+                f'{label}#{self._prev_po_parts.get(key, "") or "—"}'
+                for key, label in (('po', 'PO'), ('number', 'Number'), ('rn', 'RN'), ('pc', 'PC'))
+            ]
+            prev_lbl = QLabel(f'(Previous: {", ".join(prev_bits)})')
+            prev_lbl.setAlignment(Qt.AlignCenter)
+            prev_lbl.setFont(QFont('Segoe UI', _s(24), QFont.Bold))
+            prev_lbl.setStyleSheet('color: #AAAAAA; background: transparent;')
+            lo.addWidget(prev_lbl)
 
         FIELD_H = _s(100)
         EDIT_SS = (
